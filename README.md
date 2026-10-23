@@ -101,6 +101,22 @@ jcheck's `strict` profile (T0–T3), with no suppressions.
   (1 Martian Dollar = 0.5 Moon Bucks, and so on), not live exchange rates.
 - **Graphing, the settings page and telemetry** from the original application are out of scope.
 
+## License and attribution
+
+jCalculator is a Java derivative of Microsoft's Windows Calculator, which is MIT-licensed. It is
+distributed under the MIT license; see `LICENSE`. The upstream copyright notice and permission
+notice, Microsoft's `NOTICE` file, and a precise description of what was derived are in
+`THIRD_PARTY_NOTICES.md` and `NOTICE`.
+
+The MIT terms permit use, modification, sublicensing and redistribution, provided the copyright
+and permission notice travel with copies or substantial portions of the work. They do not require
+publishing source code, but this repository is source-available anyway. No Microsoft asset,
+binary, font or XAML is included, and the retail currency data (which the original project says is
+not licensed for third-party use) is not used.
+
+JUnit and Maven are build/test-only dependencies and are not redistributed with the jar; their
+licenses are listed in `THIRD_PARTY_NOTICES.md`.
+
 ## Layout
 
 ```
