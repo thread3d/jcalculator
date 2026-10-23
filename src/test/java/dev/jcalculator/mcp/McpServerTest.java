@@ -1,14 +1,18 @@
 package dev.jcalculator.mcp;
 
 import dev.jcalculator.app.AppInfo;
+import dev.jcalculator.diagnostics.IssueJournal;
 import dev.jcalculator.engine.CalculatorMode;
 import dev.jcalculator.harness.CalculatorSession;
 import dev.jcalculator.harness.Json;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.file.Path;
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 
@@ -55,7 +59,10 @@ class McpServerTest {
         assertTrue(tools.stream()
                 .map(Json::asObject)
                 .anyMatch(tool -> "calculator_convert".equals(tool.get("name"))));
-        assertEquals(11, tools.size());
+        assertTrue(tools.stream()
+                .map(Json::asObject)
+                .anyMatch(tool -> "calculator_report_issue".equals(tool.get("name"))));
+        assertEquals(14, tools.size());
     }
 
     @Test
@@ -137,10 +144,65 @@ class McpServerTest {
         assertTrue(result.isEmpty());
     }
 
+    @Test
+    void issueToolsRoundTrip(@TempDir Path directory) {
+        final IssueJournal journal = new IssueJournal(directory.resolve("issues.jsonl"), Clock.systemUTC());
+        final McpServer issueServer = new McpServer(
+                new CalculatorSession(CalculatorMode.STANDARD, 0L),
+                new PrintWriter(new StringWriter(), true),
+                journal);
+
+        final Map<String, Object> reported = bodyOf(callOn(issueServer, "calculator_report_issue",
+                Json.object("summary", "2 + 2 displayed 5", "detail", "Expected 4")));
+        assertEquals(Boolean.TRUE, reported.get("ok"));
+        final String id = (String) reported.get("issueId");
+
+        final Map<String, Object> listed = bodyOf(callOn(issueServer, "calculator_issues", Json.object()));
+        assertEquals(1, Json.asArray(listed.get("issues")).size());
+        assertEquals(1, Json.integer(listed, "open", -1));
+
+        final Map<String, Object> resolved = bodyOf(callOn(issueServer, "calculator_resolve_issue",
+                Json.object("id", id, "note", "fixed in a test")));
+        assertEquals("resolved", Json.asObject(resolved.get("issue")).get("status"));
+    }
+
+    @Test
+    void unknownTokensAreRecordedWithTheMcpSurface(@TempDir Path directory) {
+        final IssueJournal journal = new IssueJournal(directory.resolve("issues.jsonl"), Clock.systemUTC());
+        final McpServer issueServer = new McpServer(
+                new CalculatorSession(CalculatorMode.STANDARD, 0L),
+                new PrintWriter(new StringWriter(), true),
+                journal);
+        callOn(issueServer, "calculator_press", Json.object("tokens", List.of("bogus")));
+
+        assertEquals(1, journal.read().issues().size());
+        assertEquals(List.of("mcp"), journal.read().issues().get(0).surfaces());
+    }
+
+    @Test
+    void initializeWarnsAboutOpenIssues(@TempDir Path directory) {
+        final IssueJournal journal = new IssueJournal(directory.resolve("issues.jsonl"), Clock.systemUTC());
+        journal.record(dev.jcalculator.diagnostics.IssueDraft.reported(
+                dev.jcalculator.diagnostics.IssueSurface.MCP, "a recorded problem", ""));
+        final McpServer issueServer = new McpServer(
+                new CalculatorSession(CalculatorMode.STANDARD, 0L),
+                new PrintWriter(new StringWriter(), true),
+                journal);
+        final Map<String, Object> result = resultOf(issueServer.handle(request(1, "initialize",
+                Json.object("protocolVersion", "2025-06-18"))));
+        assertTrue(((String) result.get("instructions")).contains("1 open issue(s)"));
+    }
+
     // ---- Helpers ---------------------------------------------------------------------------------
 
     private Map<String, Object> call(String name, Map<String, Object> arguments) {
         final Map<String, Object> response = Json.parseObject(server.handle(request(7, "tools/call",
+                Json.object("name", name, "arguments", arguments))));
+        return Json.asObject(response.get("result"));
+    }
+
+    private static Map<String, Object> callOn(McpServer target, String name, Map<String, Object> arguments) {
+        final Map<String, Object> response = Json.parseObject(target.handle(request(7, "tools/call",
                 Json.object("name", name, "arguments", arguments))));
         return Json.asObject(response.get("result"));
     }

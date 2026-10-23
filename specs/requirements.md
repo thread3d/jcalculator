@@ -191,3 +191,15 @@ active page does not show, and a label that is an application action rather than
 are both rejected instead of silently doing nothing. The window gives every button its label as both
 its component name and its accessible name, and `UiDriver` marshals every action onto the event
 thread so a harness observes the repainted state without sleeping.
+
+# R-027 Problems met in use are recorded, not lost
+
+Every front end keeps a durable journal of the problems met while the calculator is in use, so a
+later session can find them instead of relying on someone's memory. An unknown token, an unknown
+operation and an unexpected internal failure are recorded automatically, together with the surface,
+the input and the state that produced them, and a caller can also report a problem in its own words.
+Repeats of the same problem fold into one entry with an occurrence count and a last-seen time.
+Entries can be listed and resolved with a disposition and a note. The journal is append-only JSON
+Lines: the location is selected by `JCALC_ISSUES` or `jcalculator.issues.path` (the launchers pin it
+inside the project), a damaged line is counted and ignored instead of losing the rest, and a journal
+that cannot be written never changes a calculation or a response.

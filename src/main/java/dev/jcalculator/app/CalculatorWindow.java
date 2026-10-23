@@ -1,5 +1,8 @@
 package dev.jcalculator.app;
 
+import dev.jcalculator.diagnostics.Faults;
+import dev.jcalculator.diagnostics.IssueJournal;
+import dev.jcalculator.diagnostics.IssueSurface;
 import dev.jcalculator.engine.CalculatorMode;
 import dev.jcalculator.engine.Command;
 import dev.jcalculator.engine.HistoryEntry;
@@ -29,6 +32,7 @@ import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -116,6 +120,7 @@ public final class CalculatorWindow extends JFrame {
     }
 
     public static void main(String[] args) {
+        installErrorReporting();
         SwingUtilities.invokeLater(() -> {
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
@@ -123,6 +128,19 @@ public final class CalculatorWindow extends JFrame {
                 // The cross-platform look and feel is the fallback.
             }
             new CalculatorWindow().setVisible(true);
+        });
+    }
+
+    /** Records an unexpected failure on any thread, then lets the stack trace be printed. */
+    private static void installErrorReporting() {
+        Thread.setDefaultUncaughtExceptionHandler((thread, error) -> {
+            try {
+                IssueJournal.shared().record(Faults.internalError(IssueSurface.SWING, error,
+                        Map.of("thread", thread.getName(), "surface", IssueSurface.SWING.wireName())));
+            } catch (RuntimeException ignored) {
+                // Best effort: the stack trace below is still printed.
+            }
+            error.printStackTrace();
         });
     }
 

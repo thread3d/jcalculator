@@ -21,7 +21,7 @@ verification:
   timeout: 10m
   max_duration: 30m
   max_test_generation_iterations: 2
-  max_generated_tests: 80
+  max_generated_tests: 96
 
 tests:
   enabled: true
@@ -819,9 +819,26 @@ scenarios:
     observation: "String.valueOf(surface.keypadKeys().stream().anyMatch(key -> \"sin\".equals(key.label())) && surface.keypadKeys().stream().noneMatch(key -> \"AND\".equals(key.label())))"
     invariant: "\"true\".equals(observation)"
 
-    requirement: R-026
-    description: The scientific page exposes sin and hides the programmer keys
+  # R-027 -- problems met in use are recorded, counted and resolved.
+  - id: SC-ISSUES-JOURNAL
+    requirement: R-027
+    description: A recorded problem folds repeats, remembers both surfaces, and is resolved
     mode: single
-    setup: "dev.jcalculator.app.AutomationSurface surface = new dev.jcalculator.app.AutomationSurface(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
-    observation: "String.valueOf(surface.keypadKeys().stream().anyMatch(key -> \"sin\".equals(key.label())) && surface.keypadKeys().stream().noneMatch(key -> \"AND\".equals(key.label())))"
-    invariant: "\"true\".equals(observation)"
+    setup: "java.nio.file.Path dir = java.nio.file.Path.of(System.getProperty(\"java.io.tmpdir\"), \"jc-issues-\" + java.util.UUID.randomUUID()); dev.jcalculator.diagnostics.IssueJournal journal = new dev.jcalculator.diagnostics.IssueJournal(dir.resolve(\"issues.jsonl\"), java.time.Clock.systemUTC());"
+    steps:
+      - call: "journal.record(new dev.jcalculator.diagnostics.IssueDraft(dev.jcalculator.diagnostics.IssueKind.USER_REPORT, dev.jcalculator.diagnostics.IssueSeverity.MEDIUM, dev.jcalculator.diagnostics.IssueSurface.HARNESS, \"tool did the wrong thing\", \"first\", java.util.Map.of())); journal.record(new dev.jcalculator.diagnostics.IssueDraft(dev.jcalculator.diagnostics.IssueKind.USER_REPORT, dev.jcalculator.diagnostics.IssueSeverity.MEDIUM, dev.jcalculator.diagnostics.IssueSurface.MCP, \"tool did the wrong thing\", \"again\", java.util.Map.of())); journal.resolve(journal.read().issues().get(0).id(), dev.jcalculator.diagnostics.IssueDisposition.FIXED, \"handled\");"
+        description: record the same problem from two surfaces and resolve it
+    observation: "journal.read().issues().size() + \":\" + journal.read().issues().get(0).occurrences() + \":\" + journal.read().issues().get(0).status() + \":\" + journal.read().issues().get(0).surfaces()"
+    invariant: "\"1:2:RESOLVED:[harness, mcp]\".equals(observation)"
+
+  # R-027 -- the JSON protocol records what it refuses and reads the journal back.
+  - id: SC-ISSUES-PROTOCOL
+    requirement: R-027
+    description: Reports, refused tokens and unexpected failures are all recorded
+    mode: single
+    setup: "java.nio.file.Path dir = java.nio.file.Path.of(System.getProperty(\"java.io.tmpdir\"), \"jc-issues-\" + java.util.UUID.randomUUID()); dev.jcalculator.diagnostics.IssueJournal journal = new dev.jcalculator.diagnostics.IssueJournal(dir.resolve(\"issues.jsonl\"), java.time.Clock.systemUTC()); dev.jcalculator.harness.HarnessProtocol protocol = new dev.jcalculator.harness.HarnessProtocol(new dev.jcalculator.harness.CalculatorSession(dev.jcalculator.engine.CalculatorMode.STANDARD, 0L), journal);"
+    steps:
+      - call: "protocol.execute(dev.jcalculator.harness.Json.object(\"op\", \"report_issue\", \"summary\", \"2 + 2 displayed 5\")); protocol.execute(dev.jcalculator.harness.Json.object(\"op\", \"press\", \"tokens\", java.util.List.of(\"bogus\"))); protocol.execute(dev.jcalculator.harness.Json.object(\"op\", \"date_add\", \"from\", \"2024-01-01\", \"days\", new java.math.BigDecimal(\"1.5\"))); protocol.execute(dev.jcalculator.harness.Json.object(\"op\", \"issues\", \"status\", \"all\"));"
+        description: report a problem, refuse a token, hit an unexpected failure, list them all
+    observation: "journal.read().issues().stream().map(issue -> issue.kind().wireName() + \":\" + issue.status().wireName()).sorted().toList().toString()"
+    invariant: "\"[internal_error:open, unsupported_input:open, user_report:open]\".equals(observation)"

@@ -1,6 +1,9 @@
 package dev.jcalculator.mcp;
 
 import dev.jcalculator.app.AppInfo;
+import dev.jcalculator.diagnostics.Faults;
+import dev.jcalculator.diagnostics.IssueJournal;
+import dev.jcalculator.diagnostics.IssueSurface;
 import dev.jcalculator.engine.CalculatorMode;
 import dev.jcalculator.harness.CalculatorSession;
 import dev.jcalculator.harness.HarnessProtocol;
@@ -59,13 +62,32 @@ public final class McpServer {
             (tokens such as 7, +, sqrt, hex, qword, deg, ms and '=' to evaluate) or pass a token
             string to calculator_evaluate. State persists between calls: calculator_state reads it,
             calculator_reset clears it, and calculator_mode switches pages. Use calculator_convert
-            and the date tools for the converter and date pages.""";
+            and the date tools for the converter and date pages.
+
+            When a tool misbehaves, refuses input it should accept, or returns a result you believe
+            is wrong, record it with calculator_report_issue. The project keeps a durable issue
+            journal so a later session can fix it: calculator_issues lists the entries and
+            calculator_resolve_issue closes one with a note.""";
 
     private final CalculatorTools tools;
     private final PrintWriter out;
+    private final IssueJournal journal;
 
     public McpServer(CalculatorSession session, PrintWriter out) {
-        final HarnessProtocol protocol = new HarnessProtocol(Objects.requireNonNull(session, "session"));
+        this(session, out, IssueJournal.shared());
+    }
+
+    /**
+     * Creates a server over one session.
+     *
+     * @param session the calculator session to expose
+     * @param out     where JSON-RPC responses are written
+     * @param journal where problems met through this server are recorded
+     */
+    public McpServer(CalculatorSession session, PrintWriter out, IssueJournal journal) {
+        this.journal = Objects.requireNonNull(journal, "journal");
+        final HarnessProtocol protocol =
+                new HarnessProtocol(Objects.requireNonNull(session, "session"), journal, IssueSurface.MCP);
         this.tools = new CalculatorTools(protocol);
         this.out = Objects.requireNonNull(out, "out");
     }
@@ -165,8 +187,18 @@ public final class McpServer {
         } catch (RpcException exception) {
             return notification ? null : error(request.get("id"), exception.code(), exception.getMessage());
         } catch (RuntimeException exception) {
+            recordInternalFailure(exception, method);
             return notification ? null
                     : error(request.get("id"), INTERNAL_ERROR, "internal error: " + exception.getMessage());
+        }
+    }
+
+    private void recordInternalFailure(RuntimeException exception, String method) {
+        try {
+            journal.record(Faults.internalError(IssueSurface.MCP, exception,
+                    Json.object("method", method, "surface", IssueSurface.MCP.wireName())));
+        } catch (RuntimeException ignored) {
+            // Best effort: recording a problem must never replace the response to the client.
         }
     }
 
@@ -197,7 +229,25 @@ public final class McpServer {
                 "protocolVersion", version,
                 "capabilities", Json.object("tools", Json.object("listChanged", false)),
                 "serverInfo", Json.object("name", SERVER_NAME, "version", AppInfo.VERSION),
-                "instructions", INSTRUCTIONS);
+                "instructions", instructions());
+    }
+
+    /** The base instructions, plus a nudge when the journal already holds open issues. */
+    private String instructions() {
+        if (!journal.isEnabled()) {
+            return INSTRUCTIONS;
+        }
+        try {
+            final long open = journal.read().openCount();
+            if (open == 0) {
+                return INSTRUCTIONS;
+            }
+            return INSTRUCTIONS + "\n\n" + open
+                    + " open issue(s) about this calculator are on record;"
+                    + " call calculator_issues before relying on the tool.";
+        } catch (RuntimeException exception) {
+            return INSTRUCTIONS;
+        }
     }
 
     private Map<String, Object> callTool(Map<String, Object> params) {
@@ -248,6 +298,10 @@ public final class McpServer {
                   --mode MODE  standard, scientific or programmer (default standard)
                   --version    print the version
                   --help       print this help
+
+                Problems met through the tools are recorded in the issue journal selected by the
+                JCALC_ISSUES environment variable (or the jcalculator.issues.path system property);
+                the bin/jcalculator-mcp launcher points it at the project's .jcalculator directory.
                 """;
     }
 

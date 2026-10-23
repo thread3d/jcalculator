@@ -4,7 +4,7 @@ A Java implementation of the Windows Calculator application: the standard, scien
 programmer calculators, date calculation, unit conversion and currency conversion, with memory and
 history, exact rational arithmetic, a Swing desktop window and a text interface.
 
-**Version 1.1.0** — the first verified release plus harness integration; see `CHANGELOG.md`.
+**Version 1.2.0** — the verified calculator plus a self-logged issue journal; see `CHANGELOG.md`.
 
 The original application in `../calculator-main` is a C#/C++ Universal Windows Platform app. Its
 model is split across three layers: `CalcManager` (history, memory, engines), `CalcEngine` (the
@@ -34,15 +34,16 @@ local repository in `.m2repo/`, so it works offline and inside a sandbox.
 
 ```bash
 ./mvnw test                 # compile and run the test suite
-./mvnw package              # build target/jcalculator-1.1.0.jar
+./mvnw package              # build target/jcalculator-1.2.0.jar
 
 java -cp target/classes dev.jcalculator.app.CalculatorWindow     # desktop window
 java -cp target/classes dev.jcalculator.app.CalculatorCli        # interactive text mode
 java -cp target/classes dev.jcalculator.harness.HarnessCli 2 + 3 # machine-readable one-shot
 java -cp target/classes dev.jcalculator.mcp.McpServer            # MCP server on stdio
 java -cp target/classes dev.jcalculator.app.CalculatorCli --version
-java -jar target/jcalculator-1.1.0.jar --version
+java -jar target/jcalculator-1.2.0.jar --version
 bin/jcalculator-harness 2 + 3 =                  # the same harness CLI via its launcher
+bin/jcalculator-cli 2 + 3 =                      # the text interface via its launcher
 bin/jcalculator-mcp                              # the MCP server via its launcher
 ```
 
@@ -128,7 +129,10 @@ Requests (`op`):
 | `date_diff` | `from`, `to` (ISO dates) | `result` |
 | `date_add`, `date_subtract` | `from`, `years`, `months`, `days`, `subtract` | `result` |
 | `history`, `memory` | — | the list |
-| `capabilities` | — | version, seed, modes, categories, operations, tokens |
+| `capabilities` | — | version, seed, modes, categories, operations, tokens, journal |
+| `report_issue` | `summary`, `detail`, `severity` | the recorded issue |
+| `issues` | `status` (`open`, `resolved`, `all`), `limit` | the page and its counts |
+| `resolve_issue` | `id`, `disposition` (`fixed`, `wontfix`), `note` | the resolved issue |
 
 Every response has the same shape. `ok` says whether the operation produced a defined result,
 `error` says whether the calculator is in its error state, and `errorCode` is a stable reason when
@@ -157,10 +161,12 @@ transport specifies. Register it with a harness like any other stdio server:
 `--seed` and `--mode`; build once with `./mvnw package` first.
 
 It implements `initialize`, `ping`, `tools/list` and `tools/call`, and advertises the `tools`
-capability. The tools are `calculator_press`, `calculator_evaluate`, `calculator_state`,
+capability. The fourteen tools are `calculator_press`, `calculator_evaluate`, `calculator_state`,
 `calculator_reset`, `calculator_mode`, `calculator_convert`, `calculator_date_diff`,
-`calculator_date_add`, `calculator_history`, `calculator_memory` and `calculator_capabilities`.
-State persists between calls, and `--seed N` / `--mode MODE` set the initial session.
+`calculator_date_add`, `calculator_history`, `calculator_memory`, `calculator_capabilities`,
+`calculator_report_issue`, `calculator_issues` and `calculator_resolve_issue`.
+State persists between calls, and `--seed N` / `--mode MODE` set the initial session. The
+`initialize` instructions mention how many issues the journal currently holds open.
 
 ### 4. Window automation
 
@@ -192,10 +198,54 @@ try (UiDriver driver = UiDriver.launch()) {
 Every button carries its label as both its component name and its accessible name, so an
 accessibility-based tool can find controls by name too.
 
+## Problems met in use are logged
+
+jCalculator keeps a journal of the problems met while it is being used, so nobody has to remember
+them until a later session can fix them. It needs no configuration:
+
+- **Automatic.** An unknown token, an unknown operation and an unexpected internal failure are
+  recorded with the surface (`cli`, `harness`, `mcp`, `swing`), the input and the state that
+  produced them. A malformed request is not recorded: that is the caller's mistake, and the response
+  already says so.
+- **Explicit.** A person or an agent can report a problem in its own words:
+
+  ```bash
+  bin/jcalculator-cli --report "2 + 2 displayed 5" --detail "expected 4"
+  bin/jcalculator-cli --issues                # open problems, newest first
+  bin/jcalculator-cli --issues --all          # include the resolved ones
+  bin/jcalculator-cli --resolve JC-1A2B3C4D --note "fixed in the engine"
+  ```
+
+  Over MCP the same operations are `calculator_report_issue`, `calculator_issues` and
+  `calculator_resolve_issue`; the JSON protocol calls them `report_issue`, `issues` and
+  `resolve_issue`. `calculator_capabilities` reports the journal's path and open count.
+
+The journal is append-only JSON Lines at `.jcalculator/issues.jsonl` under the project. The `bin/`
+launchers pin it there; `JCALC_ISSUES` or `-Djcalculator.issues.path` overrides the path, and `off`
+disables recording. Each line is an event and an issue is the fold of its events, so the same
+problem seen twice is one entry with a count, and a resolved problem that happens again reopens. A
+damaged line is ignored and counted, and a journal that cannot be written never changes a
+calculation or a response. The file is git-ignored: it is local, durable state, not source.
+
+Entries are named `JC-XXXXXXXX` — a hash of the kind, the summary and a stable context signature —
+so a session can cite one without transcribing its text.
+
+### Fixing what the journal recorded
+
+Ask a session to "fix the open issues", or work through them directly:
+
+1. `bin/jcalculator-cli --issues` (or `calculator_issues` over MCP) reads the open entries. Each one
+   carries its surface, occurrence count and context: the token, operation, mode and request.
+2. Reproduce with `bin/jcalculator-harness` or the MCP tools; the entry's context is enough to replay
+   the failure.
+3. Fix it, with a requirement, a scenario and a test as usual.
+4. `--resolve <id> --note "..."` (or `calculator_resolve_issue`) so the next session does not
+   investigate it again.
+
 ## Versioning
 
 jCalculator follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The current version
-is **1.1.0**; the release history is in `CHANGELOG.md`. A version change updates three places,
+is **1.2.0**; the release history is in `CHANGELOG.md`. A version change updates three places,
 which the build keeps in step:
 
 - `pom.xml` — the Maven project version, and therefore the jar name and manifest
@@ -283,8 +333,9 @@ src/main/java/dev/jcalculator/
   convert/   UnitConverter, Unit, UnitCategory
   app/       CalculatorCli, CalculatorWindow, AutomationSurface, UiDriver
   harness/   CalculatorSession, HarnessProtocol, HarnessCli, Tokens, Json
+  diagnostics/ IssueJournal, IssueDraft, Issue, Faults — the self-logged issue journal
   mcp/       McpServer, CalculatorTools
-bin/                             jcalculator-harness and jcalculator-mcp launchers
+bin/                             jcalculator-cli, jcalculator-harness and jcalculator-mcp launchers
 src/test/java/dev/jcalculator/   JUnit 5 tests for every layer
 specs/                            requirements.md and codewitness.yaml
 ```

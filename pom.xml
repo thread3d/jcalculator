@@ -6,7 +6,7 @@
 
   <groupId>dev.jcalculator</groupId>
   <artifactId>jcalculator</artifactId>
-  <version>1.1.0</version>
+  <version>1.2.0</version>
   <packaging>jar</packaging>
 
   <name>jcalculator</name>
@@ -41,6 +41,10 @@
         <version>3.2.5</version>
         <configuration>
           <useModulePath>false</useModulePath>
+          <!-- Tests must not write into the project's real issue journal. -->
+          <systemPropertyVariables>
+            <jcalculator.issues.path>off</jcalculator.issues.path>
+          </systemPropertyVariables>
         </configuration>
       </plugin>
       <plugin>

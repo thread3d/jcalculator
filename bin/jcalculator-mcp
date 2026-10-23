@@ -11,6 +11,10 @@ set -eu
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 root=$(dirname "$here")
+
+# Keep the issue journal inside the project, whatever directory a harness starts us in.
+: "${JCALC_ISSUES:=$root/.jcalculator/issues.jsonl}"
+export JCALC_ISSUES
 jar=$(ls "$root"/target/jcalculator-*.jar 2>/dev/null | head -n 1 || true)
 if [ -n "${jar:-}" ]; then
     classpath=$jar

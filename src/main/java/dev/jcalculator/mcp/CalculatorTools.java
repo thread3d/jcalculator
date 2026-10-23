@@ -78,6 +78,20 @@ public final class CalculatorTools {
             case "calculator_history" -> Json.object("op", "history");
             case "calculator_memory" -> Json.object("op", "memory");
             case "calculator_capabilities" -> Json.object("op", "capabilities");
+            case "calculator_report_issue" -> Json.object(
+                    "op", "report_issue",
+                    "summary", arguments.get("summary"),
+                    "detail", arguments.get("detail"),
+                    "severity", arguments.get("severity"));
+            case "calculator_issues" -> Json.object(
+                    "op", "issues",
+                    "status", arguments.get("status"),
+                    "limit", arguments.get("limit"));
+            case "calculator_resolve_issue" -> Json.object(
+                    "op", "resolve_issue",
+                    "id", arguments.get("id"),
+                    "disposition", arguments.get("disposition"),
+                    "note", arguments.get("note"));
             default -> throw new IllegalArgumentException("unknown tool: " + name);
         };
         return protocol.execute(request).response();
@@ -158,6 +172,39 @@ public final class CalculatorTools {
         tools.add(tool("calculator_capabilities",
                 "Discover the version, modes, conversion categories, operations and every token.",
                 schema(Json.object(), List.of())));
+
+        tools.add(tool("calculator_report_issue",
+                "Record a problem with the calculator so a later session can fix it. Use this when a "
+                        + "tool refuses input it should accept, or returns a result you believe is wrong.",
+                schema(Json.object(
+                        "summary", stringProperty("One-line description of the problem; it identifies the issue."),
+                        "detail", stringProperty("What you expected and what happened."),
+                        "severity", Json.object(
+                                "type", "string",
+                                "description", "low, medium, high or critical (default medium)",
+                                "enum", List.of("low", "medium", "high", "critical"))),
+                        List.of("summary"))));
+
+        tools.add(tool("calculator_issues",
+                "Read the recorded issues about jCalculator, newest first (by default only the open ones).",
+                schema(Json.object(
+                        "status", Json.object(
+                                "type", "string",
+                                "description", "open (default), resolved or all",
+                                "enum", List.of("open", "resolved", "all")),
+                        "limit", integerProperty("Maximum number of issues to return (default 20).")),
+                        List.of())));
+
+        tools.add(tool("calculator_resolve_issue",
+                "Mark a recorded issue fixed or won't-fix, with an optional note.",
+                schema(Json.object(
+                        "id", stringProperty("Issue id such as JC-1A2B3C4D."),
+                        "disposition", Json.object(
+                                "type", "string",
+                                "description", "fixed (default) or wontfix",
+                                "enum", List.of("fixed", "wontfix")),
+                        "note", stringProperty("How it was fixed, or why it will not be.")),
+                        List.of("id"))));
 
         return tools;
     }

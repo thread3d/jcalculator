@@ -1,0 +1,27 @@
+#!/bin/sh
+# Runs the text / interactive jCalculator CLI.
+#
+# Build the project first:  ./mvnw package
+# Examples:
+#   bin/jcalculator-cli 2 + 3 "*" 4 =
+#   bin/jcalculator-cli --issues
+#   bin/jcalculator-cli --report "sqrt of a negative number shows nothing" --detail "..." 
+#
+# The script uses the packaged jar when one exists and falls back to target/classes.
+set -eu
+
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+root=$(dirname "$here")
+
+# Keep the issue journal inside the project, whatever directory a caller starts us in.
+: "${JCALC_ISSUES:=$root/.jcalculator/issues.jsonl}"
+export JCALC_ISSUES
+
+jar=$(ls "$root"/target/jcalculator-*.jar 2>/dev/null | head -n 1 || true)
+if [ -n "${jar:-}" ]; then
+    classpath=$jar
+else
+    classpath=$root/target/classes
+fi
+
+exec java -cp "$classpath" dev.jcalculator.app.CalculatorCli "$@"

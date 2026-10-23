@@ -4,6 +4,46 @@ All notable changes to jCalculator are recorded here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-23
+
+Self-logged issues. The calculator now keeps its own journal of the problems met while it is in
+use, so a later session can find and fix them instead of depending on someone remembering.
+
+### Added
+
+- `dev.jcalculator.diagnostics.IssueJournal`: an append-only JSON Lines journal at
+  `.jcalculator/issues.jsonl` (git-ignored). An issue is folded from its events, so a repeat is one
+  entry with an occurrence count, a resolved problem that happens again reopens, and a damaged line
+  is ignored without losing the rest. The location comes from `JCALC_ISSUES` or
+  `jcalculator.issues.path`; `off` disables it; the `bin/` launchers pin it inside the project.
+- `dev.jcalculator.diagnostics.IssueDraft`, `Issue` and `Faults`: the draft a surface records, the
+  folded issue, and the automatic classifications (unknown token, unknown operation, unexpected
+  failure) with the context needed to reproduce them.
+- Automatic recording in the JSON protocol, the MCP server and the text interface: an unknown
+  token, an unknown operation and an unexpected internal failure are journalled with the surface,
+  input and calculator state. Malformed requests are not, because the response already explains
+  them. Recording is best effort and never changes a result.
+- `report_issue`, `issues` and `resolve_issue` operations in the JSON protocol, mirrored as the MCP
+  tools `calculator_report_issue`, `calculator_issues` and `calculator_resolve_issue`, and as
+  `--report`, `--issues` and `--resolve` in the text interface. `capabilities` now reports the
+  journal path and open count, and the MCP `initialize` instructions mention open issues.
+- `bin/jcalculator-cli`: a launcher for the text interface that keeps the journal in the project.
+- Requirement R-027 and two CodeWitness scenarios covering folding, resolution, automatic recording
+  and the protocol operations; 27 new JUnit tests.
+
+### Changed
+
+- `HarnessProtocol` takes an `IssueJournal` and the `IssueSurface` it serves, so an issue names the
+  front end that met it. The existing constructors keep working and use the configured journal.
+- The version surfaces (`pom.xml`, `AppInfo.VERSION`, this file) and the README move to 1.2.0.
+
+### Verification
+
+- CodeWitness run `CW-2026-10-23-RX128`: overall `VERIFIED`, 27/27 requirements verified,
+  175/175 tests passing, 66 generated scenarios, no counterexamples.
+- jcheck strict profile (T0–T3): 0 errors, 0 warnings.
+- Coverage: 73.1% line, 56.1% branch.
+
 ## [1.1.0] - 2026-10-23
 
 Harness integration. The calculator is now drivable by an automated harness on four levels: a

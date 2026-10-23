@@ -5,6 +5,14 @@ import dev.jcalculator.convert.UnitConverter;
 import dev.jcalculator.date.DateCalculationEngine;
 import dev.jcalculator.date.DateDifference;
 import dev.jcalculator.date.DateUnit;
+import dev.jcalculator.diagnostics.Faults;
+import dev.jcalculator.diagnostics.Issue;
+import dev.jcalculator.diagnostics.IssueDisposition;
+import dev.jcalculator.diagnostics.IssueDraft;
+import dev.jcalculator.diagnostics.IssueJournal;
+import dev.jcalculator.diagnostics.IssueKind;
+import dev.jcalculator.diagnostics.IssueSeverity;
+import dev.jcalculator.diagnostics.IssueSurface;
 import dev.jcalculator.engine.CalculatorMode;
 import dev.jcalculator.engine.Command;
 import dev.jcalculator.engine.HistoryEntry;
@@ -19,6 +27,8 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 
 /**
  * Text front end for jCalculator.
@@ -37,27 +47,54 @@ import java.util.Locale;
  */
 public final class CalculatorCli {
 
+    private static final int DEFAULT_ISSUE_LIMIT = 20;
+
     private final CalculatorManager manager;
+    private final IssueJournal journal;
     private boolean running = true;
 
     public CalculatorCli(CalculatorMode mode) {
+        this(mode, IssueJournal.shared());
+    }
+
+    /**
+     * Creates the text interface.
+     *
+     * @param mode    the calculator page to start on
+     * @param journal where problems met in the interface are recorded
+     */
+    public CalculatorCli(CalculatorMode mode, IssueJournal journal) {
         manager = new CalculatorManager(mode);
+        this.journal = Objects.requireNonNull(journal, "journal");
     }
 
     public static void main(String[] args) {
         final CalculatorCli cli = new CalculatorCli(CalculatorMode.STANDARD);
         final List<String> tokens = new ArrayList<>(List.of(args));
-
-        if (!tokens.isEmpty() && ("--version".equals(tokens.get(0)) || "-V".equals(tokens.get(0)))) {
-            System.out.println(AppInfo.displayVersion());
-            return;
+        try {
+            if (tokens.isEmpty()) {
+                cli.interactive();
+                return;
+            }
+            switch (tokens.get(0)) {
+                case "--version", "-V" -> System.out.println(AppInfo.displayVersion());
+                case "--help", "-h" -> printHelp();
+                case "--issues" -> cli.printIssues(tokens.subList(1, tokens.size()));
+                case "--report" -> cli.printReport(tokens.subList(1, tokens.size()));
+                case "--resolve" -> cli.printResolve(tokens.subList(1, tokens.size()));
+                default -> cli.runTokens(tokens);
+            }
+        } catch (IllegalArgumentException exception) {
+            fail(exception.getMessage());
+        } catch (RuntimeException exception) {
+            cli.recordInternalFailure(exception);
+            System.err.println("jcalculator: internal error: " + exception.getMessage());
+            System.exit(70);
         }
+    }
 
-        if (tokens.isEmpty()) {
-            cli.interactive();
-            return;
-        }
-
+    /** Runs a sequence of tokens, as a one-shot command line or an interactive line. */
+    private void runTokens(List<String> tokens) {
         boolean calculatorCommandsUsed = false;
         int index = 0;
         while (index < tokens.size()) {
@@ -67,14 +104,14 @@ public final class CalculatorCli {
                     if (index + 1 >= tokens.size()) {
                         fail("--mode needs standard, scientific or programmer");
                     }
-                    cli.setMode(tokens.get(index + 1));
+                    setMode(tokens.get(index + 1));
                     index += 2;
                 }
                 case "--convert" -> {
                     if (index + 4 >= tokens.size()) {
                         fail("--convert needs <category> <from> <to> <value>");
                     }
-                    System.out.println(cli.convert(tokens.get(index + 1), tokens.get(index + 2),
+                    System.out.println(convert(tokens.get(index + 1), tokens.get(index + 2),
                             tokens.get(index + 3), tokens.get(index + 4)));
                     index += 5;
                 }
@@ -82,14 +119,14 @@ public final class CalculatorCli {
                     if (index + 2 >= tokens.size()) {
                         fail("--date-diff needs <from-date> <to-date>");
                     }
-                    System.out.println(cli.dateDifference(tokens.get(index + 1), tokens.get(index + 2)));
+                    System.out.println(dateDifference(tokens.get(index + 1), tokens.get(index + 2)));
                     index += 3;
                 }
                 case "--date-add" -> {
                     if (index + 4 >= tokens.size()) {
                         fail("--date-add needs <date> <years> <months> <days>");
                     }
-                    System.out.println(cli.dateAdd(tokens.get(index + 1), tokens.get(index + 2),
+                    System.out.println(dateAdd(tokens.get(index + 1), tokens.get(index + 2),
                             tokens.get(index + 3), tokens.get(index + 4), true));
                     index += 5;
                 }
@@ -97,25 +134,206 @@ public final class CalculatorCli {
                     if (index + 4 >= tokens.size()) {
                         fail("--date-subtract needs <date> <years> <months> <days>");
                     }
-                    System.out.println(cli.dateAdd(tokens.get(index + 1), tokens.get(index + 2),
+                    System.out.println(dateAdd(tokens.get(index + 1), tokens.get(index + 2),
                             tokens.get(index + 3), tokens.get(index + 4), false));
                     index += 5;
                 }
                 default -> {
-                    cli.execute(token);
+                    execute(token);
                     calculatorCommandsUsed = true;
                     index++;
                 }
             }
         }
         if (calculatorCommandsUsed) {
-            System.out.println(cli.manager.primaryDisplay());
+            System.out.println(manager.primaryDisplay());
         }
     }
 
     private static void fail(String message) {
         System.err.println("jcalculator: " + message);
         System.exit(64);
+    }
+
+    // ---- Issue journal commands ---------------------------------------------------------------------
+
+    private void printIssues(List<String> options) {
+        boolean all = false;
+        int limit = DEFAULT_ISSUE_LIMIT;
+        int index = 0;
+        while (index < options.size()) {
+            switch (options.get(index)) {
+                case "--all", "--resolved" -> {
+                    all = true;
+                    index++;
+                }
+                case "--limit" -> {
+                    if (index + 1 >= options.size()) {
+                        fail("--limit needs a number");
+                    }
+                    limit = parseLimit(options.get(index + 1));
+                    index += 2;
+                }
+                default -> fail("unknown option for --issues: " + options.get(index));
+            }
+        }
+        if (!journal.isEnabled()) {
+            System.out.println("The issue journal is disabled.");
+            return;
+        }
+        final IssueJournal.Snapshot snapshot = journal.read();
+        final List<Issue> selected = new ArrayList<>();
+        for (Issue issue : snapshot.issues()) {
+            if (all || issue.isOpen()) {
+                selected.add(issue);
+            }
+            if (selected.size() >= limit) {
+                break;
+            }
+        }
+        if (selected.isEmpty()) {
+            System.out.println(all ? "No recorded issues." : "No open issues.");
+        }
+        for (Issue issue : selected) {
+            System.out.println(issue.id() + "  " + issue.status().wireName() + "  "
+                    + issue.severity().wireName() + "  [" + String.join(",", issue.surfaces()) + "]  "
+                    + issue.occurrences() + "x  " + issue.summary());
+            final String detail = firstLine(issue.detail());
+            if (!detail.isBlank()) {
+                System.out.println("    " + detail);
+            }
+            if (issue.resolution() != null) {
+                final Issue.Resolution resolution = issue.resolution();
+                System.out.println("    " + resolution.disposition().wireName()
+                        + (resolution.note().isBlank() ? "" : ": " + resolution.note())
+                        + " (" + resolution.resolvedAt() + ")");
+            }
+        }
+        System.out.println("Journal: " + journal.location() + " — " + snapshot.openCount()
+                + " open, " + snapshot.resolvedCount() + " resolved");
+    }
+
+    private void printReport(List<String> options) {
+        String summary = null;
+        String detail = "";
+        IssueSeverity severity = IssueSeverity.MEDIUM;
+        int index = 0;
+        while (index < options.size()) {
+            switch (options.get(index)) {
+                case "--detail" -> {
+                    if (index + 1 >= options.size()) {
+                        fail("--detail needs text");
+                    }
+                    detail = options.get(index + 1);
+                    index += 2;
+                }
+                case "--severity" -> {
+                    if (index + 1 >= options.size()) {
+                        fail("--severity needs low, medium, high or critical");
+                    }
+                    severity = IssueSeverity.fromWire(options.get(index + 1));
+                    index += 2;
+                }
+                default -> {
+                    if (summary != null) {
+                        fail("--report takes one summary; quote it as a single argument");
+                    }
+                    summary = options.get(index);
+                    index++;
+                }
+            }
+        }
+        if (summary == null) {
+            fail("--report needs a summary");
+        }
+        if (!journal.isEnabled()) {
+            System.err.println("jcalculator: the issue journal is disabled; set "
+                    + IssueJournal.PATH_PROPERTY + " or " + IssueJournal.PATH_ENVIRONMENT);
+            System.exit(1);
+        }
+        final String issueId = journal.record(new IssueDraft(
+                IssueKind.USER_REPORT, severity, IssueSurface.CLI, summary, detail, Map.of()));
+        if (journal.find(issueId).isEmpty()) {
+            System.err.println("jcalculator: the issue journal could not be written: " + journal.location());
+            System.exit(1);
+        }
+        final IssueJournal.Snapshot snapshot = journal.read();
+        System.out.println("Recorded " + issueId + " — " + snapshot.openCount() + " open issue(s) in "
+                + journal.location());
+    }
+
+    private void printResolve(List<String> options) {
+        String id = null;
+        String note = "";
+        IssueDisposition disposition = IssueDisposition.FIXED;
+        int index = 0;
+        while (index < options.size()) {
+            switch (options.get(index)) {
+                case "--note" -> {
+                    if (index + 1 >= options.size()) {
+                        fail("--note needs text");
+                    }
+                    note = options.get(index + 1);
+                    index += 2;
+                }
+                case "--wontfix" -> {
+                    disposition = IssueDisposition.WONTFIX;
+                    index++;
+                }
+                default -> {
+                    if (id != null) {
+                        fail("--resolve takes one issue id");
+                    }
+                    id = options.get(index);
+                    index++;
+                }
+            }
+        }
+        if (id == null) {
+            fail("--resolve needs an issue id");
+        }
+        if (!journal.resolve(id, disposition, note)) {
+            System.err.println("jcalculator: no issue with id " + id);
+            System.exit(1);
+        }
+        final IssueDisposition resolvedAs = disposition;
+        final String issueId = id;
+        journal.find(issueId).ifPresent(issue -> System.out.println("Resolved " + issue.id() + " as "
+                + resolvedAs.wireName() + ": " + issue.summary()));
+    }
+
+    private static int parseLimit(String text) {
+        try {
+            final int limit = Integer.parseInt(text);
+            if (limit < 1) {
+                fail("--limit must be at least 1");
+            }
+            return limit;
+        } catch (NumberFormatException exception) {
+            fail("invalid --limit: " + text);
+            return DEFAULT_ISSUE_LIMIT;
+        }
+    }
+
+    private static String firstLine(String text) {
+        return text.lines().findFirst().orElse("");
+    }
+
+    private void recordUnknownToken(String token) {
+        try {
+            journal.record(Faults.unknownToken(IssueSurface.CLI, token, manager.mode()));
+        } catch (RuntimeException ignored) {
+            // Best effort: an unknown token is still reported on standard error.
+        }
+    }
+
+    private void recordInternalFailure(RuntimeException exception) {
+        try {
+            journal.record(Faults.internalError(IssueSurface.CLI, exception,
+                    Map.of("surface", IssueSurface.CLI.wireName())));
+        } catch (RuntimeException ignored) {
+            // Best effort: the failure is still reported on standard error.
+        }
     }
 
     // ---- Interactive ----------------------------------------------------------------------------
@@ -240,6 +458,7 @@ public final class CalculatorCli {
 
         final Command command = Tokens.commandFor(normalized);
         if (command == null) {
+            recordUnknownToken(token);
             System.err.println("unknown token: " + token);
             return false;
         }
@@ -324,6 +543,10 @@ public final class CalculatorCli {
                   standard scientific programmer | hex dec oct bin | qword dword word byte | deg rad grad
                 Other:
                   history  memory  help  quit
+                Problems met in use (recorded in the project's issue journal):
+                  --issues [--all] [--limit N]          list recorded problems
+                  --report <summary> [--detail T] [--severity S]   record a problem
+                  --resolve <id> [--note T] [--wontfix]            close a problem
                 """);
     }
 
@@ -331,5 +554,10 @@ public final class CalculatorCli {
 
     public CalculatorManager manager() {
         return manager;
+    }
+
+    /** The journal this interface records problems in. */
+    public IssueJournal journal() {
+        return journal;
     }
 }

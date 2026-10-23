@@ -131,9 +131,9 @@ class HarnessCliTest {
         command[2] = classes.toString();
         command[3] = "dev.jcalculator.harness.HarnessCli";
         System.arraycopy(args, 0, command, 4, args.length);
-        final Process process = new ProcessBuilder(command)
-                .redirectErrorStream(true)
-                .start();
+        final ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
+        builder.environment().put("JCALC_ISSUES", "off");
+        final Process process = builder.start();
         assertTrue(process.waitFor(30, TimeUnit.SECONDS), "the harness process must finish");
         return process.exitValue();
     }
