@@ -51,6 +51,11 @@ public final class CalculatorCli {
         final CalculatorCli cli = new CalculatorCli(CalculatorMode.STANDARD);
         final List<String> tokens = new ArrayList<>(List.of(args));
 
+        if (!tokens.isEmpty() && ("--version".equals(tokens.get(0)) || "-V".equals(tokens.get(0)))) {
+            System.out.println(AppInfo.displayVersion());
+            return;
+        }
+
         if (tokens.isEmpty()) {
             cli.interactive();
             return;
@@ -119,7 +124,7 @@ public final class CalculatorCli {
     // ---- Interactive ----------------------------------------------------------------------------
 
     private void interactive() {
-        System.out.println("jCalculator " + CalculatorWindow.VERSION + " - a Java calculator");
+        System.out.println(AppInfo.displayVersion() + " - a Java calculator");
         System.out.println("Mode: " + manager.mode() + ". Type 'help' for commands, 'quit' to exit.");
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
             while (running) {
@@ -163,6 +168,10 @@ public final class CalculatorCli {
             }
             case "quit", "exit" -> {
                 running = false;
+                return true;
+            }
+            case "version" -> {
+                System.out.println(AppInfo.displayVersion());
                 return true;
             }
             case "history" -> {

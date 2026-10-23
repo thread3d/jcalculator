@@ -52,6 +52,11 @@
             <manifest>
               <mainClass>dev.jcalculator.app.CalculatorCli</mainClass>
             </manifest>
+            <manifestEntries>
+              <Implementation-Title>${project.name}</Implementation-Title>
+              <Implementation-Version>${project.version}</Implementation-Version>
+              <Automatic-Module-Name>dev.jcalculator</Automatic-Module-Name>
+            </manifestEntries>
           </archive>
         </configuration>
       </plugin>

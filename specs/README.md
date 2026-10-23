@@ -39,20 +39,20 @@ removed from the project after the run and kept in the run directory.
 
 ## Latest result
 
-Run `CW-2026-10-23-GP3FK` (copy mode, not in place):
+Run `CW-2026-10-23-7QHQX` (copy mode, not in place):
 
 | Measure | Result |
 | --- | --- |
 | Overall | `VERIFIED` |
 | Requirements | 22 `VERIFIED`, 0 `PARTIALLY_VERIFIED`, 0 `FAILED`, 0 `UNVERIFIED`, 0 `BLOCKED` |
-| Existing tests | 76 executed, 76 passed |
+| Existing tests | 78 executed, 78 passed |
 | Scenario tests | 56 generated from `codewitness.yaml`, all passed |
 | Counterexamples | none |
 | Static analysis | 0 compiler findings; 11 medium heuristic findings |
-| Coverage | 58.4% line, 48.9% branch |
+| Coverage | 58.2% line, 48.7% branch |
 
 The JSON and HTML reports are in
-`.codewitness/runs/CW-2026-10-23-GP3FK/report.json` and `report.html`. The run directory is
+`.codewitness/runs/CW-2026-10-23-7QHQX/report.json` and `report.html`. The run directory is
 git-ignored because it is generated evidence, not source.
 
 ## The heuristic findings
