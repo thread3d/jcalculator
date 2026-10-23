@@ -47,6 +47,29 @@ class CalculatorCliTest {
     }
 
     @Test
+    void eIsEulersConstantInScientificModeRatherThanHexadecimalE() {
+        final IssueJournal journal = new IssueJournal(directory.resolve("issues.jsonl"), Clock.systemUTC());
+        final CalculatorCli cli = new CalculatorCli(CalculatorMode.SCIENTIFIC, journal);
+        assertTrue(cli.execute("e"));
+        assertTrue(cli.manager().primaryDisplay().startsWith("2.71828"),
+                cli.manager().primaryDisplay());
+        assertTrue(journal.read().issues().isEmpty());
+    }
+
+    @Test
+    void aHexLetterOutsideTheProgrammerPageIsRefusedAndRecorded() {
+        final IssueJournal journal = new IssueJournal(directory.resolve("issues.jsonl"), Clock.systemUTC());
+        final CalculatorCli cli = new CalculatorCli(CalculatorMode.STANDARD, journal);
+        assertFalse(cli.execute("a"));
+        assertEquals("0", cli.manager().primaryDisplay());
+
+        final List<Issue> issues = journal.read().issues();
+        assertEquals(1, issues.size());
+        assertEquals(IssueKind.UNSUPPORTED_INPUT, issues.get(0).kind());
+        assertEquals("a", issues.get(0).context().get("token"));
+    }
+
+    @Test
     void reportIssuesAndResolveThroughTheCommandLine() throws Exception {
         final Path journal = directory.resolve("issues.jsonl");
 

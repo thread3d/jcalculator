@@ -181,9 +181,28 @@ public final class HarnessProtocol {
         } catch (IllegalArgumentException exception) {
             return failure(id, op, "bad_request", exception.getMessage());
         } catch (RuntimeException exception) {
-            record(Faults.internalError(surface, exception, faultContext(op, request)));
-            return failure(id, op, "internal_error", exception.getMessage());
+            return unexpectedFailure(id, op, exception, request);
         }
+    }
+
+    /**
+     * Answers a failure the protocol did not anticipate.
+     *
+     * <p>A request that fails validation never reaches this method: a field of the wrong type or a
+     * non-integral number is a specific {@code bad_request} and is not journalled. This is the
+     * protocol's safety net for a bug in the calculator itself, so the failure is recorded (R-027)
+     * and the caller gets a stable {@code internal_error} rather than a broken response. It is a
+     * named method rather than an inline catch so the classification can be exercised directly.
+     *
+     * @param id      the request id, echoed in the response
+     * @param op      the requested operation, echoed in the response
+     * @param failure the unexpected failure; its message becomes the response message
+     * @param request the request that provoked it, kept as reproduction context
+     * @return the journalled {@code internal_error} response
+     */
+    Outcome unexpectedFailure(Object id, String op, RuntimeException failure, Map<String, Object> request) {
+        record(Faults.internalError(surface, failure, faultContext(op, request)));
+        return failure(id, op, "internal_error", failure.getMessage());
     }
 
     /** Records an automatically detected problem without letting the journal break the calculator. */
@@ -439,7 +458,8 @@ public final class HarnessProtocol {
             final List<String> tokens = new ArrayList<>();
             for (Object item : items) {
                 if (!(item instanceof String token)) {
-                    throw new JsonException("tokens must be strings");
+                    throw new JsonException("tokens must be an array of button names;"
+                            + " the array contains a " + describe(item));
                 }
                 tokens.add(token);
             }
@@ -448,12 +468,37 @@ public final class HarnessProtocol {
             }
             return tokens;
         }
+        if (raw != null) {
+            throw new JsonException("tokens must be an array of button names, for example"
+                    + " [\"2\",\"+\",\"3\",\"=\"]; it was given " + describe(raw)
+                    + ". For a whitespace-separated string, use expression");
+        }
         final String expression = Json.optionalString(request, "expression",
                 Json.optionalString(request, "value", null));
         if (expression == null) {
             throw new JsonException("missing tokens or expression");
         }
         return split(expression);
+    }
+
+    /** Names the kind of a request value, so a type error says what arrived. */
+    private static String describe(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof String) {
+            return "string";
+        }
+        if (value instanceof Map<?, ?>) {
+            return "object";
+        }
+        if (value instanceof List<?>) {
+            return "array";
+        }
+        if (value instanceof Boolean) {
+            return "boolean";
+        }
+        return "number";
     }
 
     private static List<String> split(String expression) {

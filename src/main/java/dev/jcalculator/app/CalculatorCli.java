@@ -456,10 +456,10 @@ public final class CalculatorCli {
             }
         }
 
-        final Command command = Tokens.commandFor(normalized);
+        final Command command = Tokens.commandFor(normalized, manager.mode());
         if (command == null) {
             recordUnknownToken(token);
-            System.err.println("unknown token: " + token);
+            System.err.println(Tokens.refusalMessage(token, manager.mode()));
             return false;
         }
         press(command);

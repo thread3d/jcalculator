@@ -130,8 +130,9 @@ public final class UiDriver implements AutoCloseable {
     /** Types digits, hexadecimal digits and decimal points one key at a time. */
     public void type(String text) {
         onEdt(() -> {
+            final CalculatorMode mode = window.surface().mode();
             for (int index = 0; index < text.length(); index++) {
-                window.pressCommand(Tokens.require(String.valueOf(text.charAt(index))));
+                window.pressCommand(Tokens.require(String.valueOf(text.charAt(index)), mode));
             }
             return null;
         });

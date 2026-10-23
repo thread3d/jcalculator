@@ -53,6 +53,60 @@ class HarnessProtocolTest {
         assertEquals(HarnessProtocol.EXIT_PROTOCOL_ERROR, outcome.exitCode());
         assertEquals(Boolean.FALSE, outcome.response().get("ok"));
         assertEquals("unknown_token", outcome.response().get("errorCode"));
+        assertTrue(((String) outcome.response().get("message")).contains("STANDARD"));
+    }
+
+    @Test
+    void aHexLetterOutsideTheProgrammerPageIsRefused() {
+        final HarnessProtocol.Outcome outcome = protocol.execute(
+                Json.object("op", "press", "tokens", List.of("a")));
+        assertEquals(HarnessProtocol.EXIT_PROTOCOL_ERROR, outcome.exitCode());
+        assertEquals("unknown_token", outcome.response().get("errorCode"));
+        assertEquals("0", outcome.response().get("display"));
+        assertTrue(((String) outcome.response().get("message")).contains("programmer page"));
+    }
+
+    @Test
+    void aHexLetterOnTheProgrammerPageIsADigit() {
+        protocol.execute(Json.object("op", "mode", "mode", "programmer"));
+        final HarnessProtocol.Outcome outcome = protocol.execute(
+                Json.object("op", "press", "tokens", List.of("hex", "a", "f")));
+        assertEquals(Boolean.TRUE, outcome.response().get("ok"));
+        assertEquals("AF", outcome.response().get("display"));
+    }
+
+    @Test
+    void eulerHasItsOwnTokenOnTheScientificPage() {
+        protocol.execute(Json.object("op", "mode", "mode", "scientific"));
+        final HarnessProtocol.Outcome outcome = protocol.execute(
+                Json.object("op", "press", "tokens", List.of("e")));
+        assertEquals(Boolean.TRUE, outcome.response().get("ok"));
+        assertTrue(((String) outcome.response().get("display")).startsWith("2.71828"),
+                String.valueOf(outcome.response().get("display")));
+    }
+
+    @Test
+    void aFractionalDurationIsAMalformedRequest() {
+        final HarnessProtocol.Outcome outcome = protocol.execute(Json.object(
+                "op", "date_add", "from", "2024-01-01", "days", new java.math.BigDecimal("1.5")));
+        assertEquals(HarnessProtocol.EXIT_PROTOCOL_ERROR, outcome.exitCode());
+        assertEquals("bad_request", outcome.response().get("errorCode"));
+        assertTrue(((String) outcome.response().get("message")).contains("whole number"));
+    }
+
+    @Test
+    void tokensMustBeAnArray() {
+        final HarnessProtocol.Outcome refused = protocol.execute(
+                Json.object("op", "press", "tokens", "2 + 3 ="));
+        assertEquals(HarnessProtocol.EXIT_PROTOCOL_ERROR, refused.exitCode());
+        assertEquals("bad_request", refused.response().get("errorCode"));
+        final String message = (String) refused.response().get("message");
+        assertTrue(message.contains("array"), message);
+        assertTrue(message.contains("expression"), message);
+
+        final HarnessProtocol.Outcome accepted = protocol.execute(
+                Json.object("op", "press", "expression", "2 + 3 ="));
+        assertEquals("5", accepted.response().get("display"));
     }
 
     @Test

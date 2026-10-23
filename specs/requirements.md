@@ -203,3 +203,29 @@ Entries can be listed and resolved with a disposition and a note. The journal is
 Lines: the location is selected by `JCALC_ISSUES` or `jcalculator.issues.path` (the launchers pin it
 inside the project), a damaged line is counted and ignored instead of losing the rest, and a journal
 that cannot be written never changes a calculation or a response.
+
+# R-028 A token means what the active page's keypad shows
+
+A token names a button. A digit is a digit on every page, and a named key is a button whose effect
+the active page decides: a function the page does not offer is ignored, as the original does. Single
+letters that could be hexadecimal digits are page-specific and are never guessed. `e` is Euler's
+constant on the standard and scientific pages and the hexadecimal digit `E` on the programmer page;
+`c` clears outside the programmer page (where the key is labelled `C`) and is the hexadecimal digit
+`C` on it. The letters `a`, `b`, `d` and `f` are buttons only on the programmer page. Pressing one of
+those outside the programmer page is refused with an `UnknownTokenException` whose message names the
+token and says that the hexadecimal digits belong to the programmer page, rather than reporting
+success with an unchanged display. Capability discovery still lists the whole vocabulary, which is the
+union across pages.
+
+# R-029 A malformed request field is refused, never reported as an internal failure
+
+A request whose field has the wrong type or a value the calculator cannot accept is the caller's
+mistake, not a fault in the calculator. The JSON protocol answers it with `bad_request` and a message
+that says what the field must be. `date_add` and `date_subtract` accept only whole years, months and
+days in 32-bit range, so a fractional or oversized day count is refused before any calendar
+arithmetic. `press` requires `tokens` to be an array of button names and `expression` to carry the
+whitespace-separated string form; a `tokens` value that is a string, or an entry that is not a string,
+is refused with a message that names the expected shape instead of complaining that both fields are
+missing. A malformed request is not recorded in the issue journal, because the response already
+explains it; `internal_error` is reserved for a failure the calculator did not expect.
+

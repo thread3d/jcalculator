@@ -9,6 +9,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JsonTest {
 
@@ -71,5 +72,20 @@ class JsonTest {
         assertEquals("fallback", Json.optionalString(object, "missing", "fallback"));
         assertEquals(9, Json.integer(object, "missing", 9));
         assertThrows(JsonException.class, () -> Json.string(object, "i"));
+    }
+
+    @Test
+    void rejectsANonIntegralNumberAsAMalformedField() {
+        final JsonException fractional = assertThrows(JsonException.class,
+                () -> Json.integer(Map.of("days", new BigDecimal("1.5")), "days", 0));
+        assertTrue(fractional.getMessage().contains("days"), fractional.getMessage());
+        assertTrue(fractional.getMessage().contains("whole number"), fractional.getMessage());
+        assertEquals(ArithmeticException.class, fractional.getCause().getClass());
+
+        assertThrows(JsonException.class,
+                () -> Json.integer(Map.of("days", new BigDecimal("1e10")), "days", 0));
+        assertThrows(JsonException.class,
+                () -> Json.integer(Map.of("days", Long.MAX_VALUE), "days", 0));
+        assertThrows(JsonException.class, () -> Json.integer(Map.of("days", "one"), "days", 0));
     }
 }

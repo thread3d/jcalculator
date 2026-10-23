@@ -2,7 +2,7 @@
 
 This directory contains the specification and its executable evidence.
 
-- `requirements.md` — the specification. Each requirement has a stable id (`R-001` … `R-027`) and
+- `requirements.md` — the specification. Each requirement has a stable id (`R-001` … `R-029`) and
   states one observable behaviour of the application.
 - `codewitness.yaml` — the CodeWitness configuration. Every requirement has at least one declared
   scenario. A scenario sets up the public API, performs the calls and checks an invariant; it is
@@ -39,20 +39,20 @@ removed from the project after the run and kept in the run directory.
 
 ## Latest result
 
-Run `CW-2026-10-23-RX128` (copy mode, not in place):
+Run `CW-2026-10-23-V7DHP` (copy mode, not in place):
 
 | Measure | Result |
 | --- | --- |
 | Overall | `VERIFIED` |
-| Requirements | 27 `VERIFIED`, 0 `PARTIALLY_VERIFIED`, 0 `FAILED`, 0 `UNVERIFIED`, 0 `BLOCKED` |
-| Existing tests | 175 executed, 175 passed |
-| Scenario tests | 66 generated from `codewitness.yaml`, all passed |
+| Requirements | 29 `VERIFIED`, 0 `PARTIALLY_VERIFIED`, 0 `FAILED`, 0 `UNVERIFIED`, 0 `BLOCKED` |
+| Existing tests | 193 executed, 193 passed |
+| Scenario tests | 71 generated from `codewitness.yaml`, all passed |
 | Counterexamples | none |
 | Static analysis | 0 compiler findings; 15 medium heuristic findings |
-| Coverage | 73.1% line, 56.1% branch |
+| Coverage | 73.2% line, 56.5% branch |
 
 The JSON and HTML reports are in
-`.codewitness/runs/CW-2026-10-23-RX128/report.json` and `report.html`. The run directory is
+`.codewitness/runs/CW-2026-10-23-V7DHP/report.json` and `report.html`. The run directory is
 git-ignored because it is generated evidence, not source.
 
 ## The heuristic findings

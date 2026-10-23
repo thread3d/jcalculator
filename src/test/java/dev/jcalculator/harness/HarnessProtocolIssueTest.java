@@ -69,16 +69,40 @@ class HarnessProtocolIssueTest {
     @Test
     void anUnexpectedFailureIsRecordedWithItsContext() {
         final IssueJournal journal = journal();
-        final HarnessProtocol.Outcome outcome = protocol(journal).execute(
-                Json.object("op", "date_add", "from", "2024-01-01", "days", new java.math.BigDecimal("1.5")));
+        final Map<String, Object> request = Json.object("op", "press", "tokens", List.of("2"));
+        final HarnessProtocol.Outcome outcome = protocol(journal).unexpectedFailure(
+                7, "press", new IllegalStateException("the model blew up"), request);
+
         assertEquals("internal_error", outcome.response().get("errorCode"));
+        assertEquals(7, outcome.response().get("id"));
+        assertEquals("the model blew up", outcome.response().get("message"));
 
         final Issue issue = journal.read().issues().get(0);
         assertEquals(IssueKind.INTERNAL_ERROR, issue.kind());
         assertEquals(IssueSeverity.HIGH, issue.severity());
-        assertEquals("java.lang.ArithmeticException", issue.context().get("exception"));
+        assertEquals("java.lang.IllegalStateException", issue.context().get("exception"));
         assertNotNull(issue.context().get("request"));
         assertFalse(issue.detail().isBlank());
+    }
+
+    @Test
+    void aMalformedFieldIsRefusedWithoutBeingRecorded() {
+        final IssueJournal journal = journal();
+        final HarnessProtocol protocol = protocol(journal);
+        final List<Map<String, Object>> requests = List.of(
+                Json.object("op", "date_add", "from", "2024-01-01",
+                        "days", new java.math.BigDecimal("1.5")),
+                Json.object("op", "date_add", "from", "2024-01-01",
+                        "days", new java.math.BigDecimal("1e10")),
+                Json.object("op", "press", "tokens", "2 + 3 ="),
+                Json.object("op", "press", "tokens", List.of(2)));
+
+        for (Map<String, Object> request : requests) {
+            final HarnessProtocol.Outcome outcome = protocol.execute(request);
+            assertEquals("bad_request", outcome.response().get("errorCode"), request.toString());
+            assertEquals(HarnessProtocol.EXIT_PROTOCOL_ERROR, outcome.exitCode());
+        }
+        assertTrue(journal.read().issues().isEmpty());
     }
 
     @Test

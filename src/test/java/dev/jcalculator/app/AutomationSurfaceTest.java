@@ -80,6 +80,12 @@ class AutomationSurfaceTest {
     }
 
     @Test
+    void typingHexDigitsOutsideTheProgrammerPageIsRefused() {
+        final AutomationSurface surface = new AutomationSurface(CalculatorMode.STANDARD);
+        assertThrows(dev.jcalculator.harness.UnknownTokenException.class, () -> surface.type("ff"));
+    }
+
+    @Test
     void snapshotReflectsSettings() {
         final AutomationSurface surface = new AutomationSurface(CalculatorMode.PROGRAMMER);
         surface.pressToken("hex");

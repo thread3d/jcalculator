@@ -4,7 +4,8 @@ A Java implementation of the Windows Calculator application: the standard, scien
 programmer calculators, date calculation, unit conversion and currency conversion, with memory and
 history, exact rational arithmetic, a Swing desktop window and a text interface.
 
-**Version 1.2.0** — the verified calculator plus a self-logged issue journal; see `CHANGELOG.md`.
+**Version 1.3.0** — the verified calculator, with the problems its own journal recorded now fixed;
+see `CHANGELOG.md`.
 
 The original application in `../calculator-main` is a C#/C++ Universal Windows Platform app. Its
 model is split across three layers: `CalcManager` (history, memory, engines), `CalcEngine` (the
@@ -34,14 +35,14 @@ local repository in `.m2repo/`, so it works offline and inside a sandbox.
 
 ```bash
 ./mvnw test                 # compile and run the test suite
-./mvnw package              # build target/jcalculator-1.2.0.jar
+./mvnw package              # build target/jcalculator-1.3.0.jar
 
 java -cp target/classes dev.jcalculator.app.CalculatorWindow     # desktop window
 java -cp target/classes dev.jcalculator.app.CalculatorCli        # interactive text mode
 java -cp target/classes dev.jcalculator.harness.HarnessCli 2 + 3 # machine-readable one-shot
 java -cp target/classes dev.jcalculator.mcp.McpServer            # MCP server on stdio
 java -cp target/classes dev.jcalculator.app.CalculatorCli --version
-java -jar target/jcalculator-1.2.0.jar --version
+java -jar target/jcalculator-1.3.0.jar --version
 bin/jcalculator-harness 2 + 3 =                  # the same harness CLI via its launcher
 bin/jcalculator-cli 2 + 3 =                      # the text interface via its launcher
 bin/jcalculator-mcp                              # the MCP server via its launcher
@@ -74,10 +75,13 @@ share one model, so they cannot disagree about what a key press does:
 | Desktop window | `dev.jcalculator.app.UiDriver` | a display |
 
 All four accept the same button tokens as the text interface (`7`, `+`, `sqrt`, `hex`, `qword`,
-`deg`, `ms`, `=`), and all four report the same state. The one token whose meaning depends on the
-page is `c`: it clears on the standard and scientific pages, where the key is labelled `C`, and
-enters hexadecimal `C` on the programmer page, which has a separate `CLR`. The random key is seeded,
-so a run can be replayed exactly.
+`deg`, `ms`, `=`), and all four report the same state. A token means what the active page's keypad
+shows: `c` clears on the standard and scientific pages, where the key is labelled `C`, and is the
+hexadecimal digit `C` on the programmer page, which has a separate `CLR`; `e` is Euler's constant on
+the standard and scientific pages and the hexadecimal digit `E` on the programmer page. The letters
+`a`, `b`, `d` and `f` are buttons only on the programmer page, so pressing one elsewhere is refused
+with an explanation rather than accepted with no effect. The random key is seeded, so a run can be
+replayed exactly.
 
 ### 1. Programmatic session
 
@@ -127,7 +131,7 @@ Requests (`op`):
 | `mode` | `mode`: `standard`, `scientific`, `programmer` | the new page |
 | `convert` | `category`, `from`, `to`, `value` | `result` |
 | `date_diff` | `from`, `to` (ISO dates) | `result` |
-| `date_add`, `date_subtract` | `from`, `years`, `months`, `days`, `subtract` | `result` |
+| `date_add`, `date_subtract` | `from`, `years`, `months`, `days` (whole numbers), `subtract` | `result` |
 | `history`, `memory` | — | the list |
 | `capabilities` | — | version, seed, modes, categories, operations, tokens, journal |
 | `report_issue` | `summary`, `detail`, `severity` | the recorded issue |
@@ -138,6 +142,10 @@ Every response has the same shape. `ok` says whether the operation produced a de
 `error` says whether the calculator is in its error state, and `errorCode` is a stable reason when
 `ok` is false: `calculator_error`, `out_of_range`, `unknown_token`, `unknown_op`, `bad_request`,
 `parse_error`.
+
+A field of the wrong type is a `bad_request` that says what the field expects, never an
+`internal_error`: `tokens` must be an array of button names (a whitespace-separated string goes in
+`expression`), and a duration field must be a whole number in 32-bit range.
 
 Exit codes: `0` success, `1` calculation error, `2` malformed request, `64` bad command line.
 Options: `--seed N`, `--mode MODE`, `--batch`, `--text`, `--json`, `--version`, `--help`.
@@ -245,7 +253,7 @@ Ask a session to "fix the open issues", or work through them directly:
 ## Versioning
 
 jCalculator follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The current version
-is **1.2.0**; the release history is in `CHANGELOG.md`. A version change updates three places,
+is **1.3.0**; the release history is in `CHANGELOG.md`. A version change updates three places,
 which the build keeps in step:
 
 - `pom.xml` — the Maven project version, and therefore the jar name and manifest
@@ -254,7 +262,7 @@ which the build keeps in step:
   if it disagrees with the POM);
 - `CHANGELOG.md` — the entry describing the release.
 
-Git releases are tagged `v<version>` (for example `v1.1.0`).
+Git releases are tagged `v<version>` (for example `v1.2.0`).
 
 ## Specifications
 

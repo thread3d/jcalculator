@@ -209,20 +209,38 @@ public final class Json {
         throw new JsonException("field " + key + " must be a string");
     }
 
-    /** Returns an integer field, or the fallback when the field is absent. */
+    /**
+     * Returns an integer field, or the fallback when the field is absent.
+     *
+     * <p>A number that is not a whole number in 32-bit range is a malformed request, not an internal
+     * failure: the conversion is reported as a {@link JsonException} naming the field, so a caller
+     * learns what to change instead of seeing a rounding or overflow stack trace.
+     */
     public static int integer(Map<String, Object> object, String key, int fallback) {
         final Object value = object.get(key);
         if (value == null) {
             return fallback;
         }
         if (value instanceof BigDecimal decimal) {
-            return decimal.intValueExact();
+            try {
+                return decimal.intValueExact();
+            } catch (ArithmeticException exception) {
+                throw new JsonException("field " + key + " must be a whole number between "
+                        + Integer.MIN_VALUE + " and " + Integer.MAX_VALUE + "; got "
+                        + decimal.toPlainString(), exception);
+            }
         }
         if (value instanceof Integer integer) {
             return integer.intValue();
         }
         if (value instanceof Long longValue) {
-            return Math.toIntExact(longValue.longValue());
+            try {
+                return Math.toIntExact(longValue.longValue());
+            } catch (ArithmeticException exception) {
+                throw new JsonException("field " + key + " must be a whole number between "
+                        + Integer.MIN_VALUE + " and " + Integer.MAX_VALUE + "; got " + longValue,
+                        exception);
+            }
         }
         throw new JsonException("field " + key + " must be a number");
     }

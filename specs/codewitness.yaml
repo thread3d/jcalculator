@@ -834,11 +834,68 @@ scenarios:
   # R-027 -- the JSON protocol records what it refuses and reads the journal back.
   - id: SC-ISSUES-PROTOCOL
     requirement: R-027
-    description: Reports, refused tokens and unexpected failures are all recorded
+    description: Reports and refused tokens are recorded; a malformed request is not
     mode: single
     setup: "java.nio.file.Path dir = java.nio.file.Path.of(System.getProperty(\"java.io.tmpdir\"), \"jc-issues-\" + java.util.UUID.randomUUID()); dev.jcalculator.diagnostics.IssueJournal journal = new dev.jcalculator.diagnostics.IssueJournal(dir.resolve(\"issues.jsonl\"), java.time.Clock.systemUTC()); dev.jcalculator.harness.HarnessProtocol protocol = new dev.jcalculator.harness.HarnessProtocol(new dev.jcalculator.harness.CalculatorSession(dev.jcalculator.engine.CalculatorMode.STANDARD, 0L), journal);"
     steps:
       - call: "protocol.execute(dev.jcalculator.harness.Json.object(\"op\", \"report_issue\", \"summary\", \"2 + 2 displayed 5\")); protocol.execute(dev.jcalculator.harness.Json.object(\"op\", \"press\", \"tokens\", java.util.List.of(\"bogus\"))); protocol.execute(dev.jcalculator.harness.Json.object(\"op\", \"date_add\", \"from\", \"2024-01-01\", \"days\", new java.math.BigDecimal(\"1.5\"))); protocol.execute(dev.jcalculator.harness.Json.object(\"op\", \"issues\", \"status\", \"all\"));"
-        description: report a problem, refuse a token, hit an unexpected failure, list them all
+        description: report a problem, refuse a token, send a malformed request, list them all
     observation: "journal.read().issues().stream().map(issue -> issue.kind().wireName() + \":\" + issue.status().wireName()).sorted().toList().toString()"
-    invariant: "\"[internal_error:open, unsupported_input:open, user_report:open]\".equals(observation)"
+    invariant: "\"[unsupported_input:open, user_report:open]\".equals(observation)"
+
+  # R-028 -- a token means what the active page's keypad shows.
+  - id: SC-TOKEN-EULER
+    requirement: R-028
+    description: e is Euler's constant on the scientific page
+    mode: single
+    setup: "dev.jcalculator.harness.CalculatorSession session = new dev.jcalculator.harness.CalculatorSession(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC, 0L);"
+    steps:
+      - call: "session.press(\"e\");"
+        description: press the constant key rather than the hexadecimal digit
+    observation: "session.state().display()"
+    invariant: "observation.startsWith(\"2.71828\")"
+
+  - id: SC-TOKEN-PROGRAMMER-HEX
+    requirement: R-028
+    description: e and f are hexadecimal digits on the programmer page
+    mode: single
+    setup: "dev.jcalculator.harness.CalculatorSession session = new dev.jcalculator.harness.CalculatorSession(dev.jcalculator.engine.CalculatorMode.PROGRAMMER, 0L);"
+    steps:
+      - call: "session.press(\"hex\"); session.press(\"e\"); session.press(\"f\");"
+        description: type two hexadecimal digits
+    observation: "session.state().display()"
+    invariant: "\"EF\".equals(observation)"
+
+  - id: SC-TOKEN-HEX-REFUSED
+    requirement: R-028
+    description: A hexadecimal letter pressed outside the programmer page is refused
+    mode: single
+    setup: "dev.jcalculator.harness.CalculatorSession session = new dev.jcalculator.harness.CalculatorSession(dev.jcalculator.engine.CalculatorMode.STANDARD, 0L); String refused = \"none\";"
+    steps:
+      - call: "try { session.press(\"a\"); } catch (dev.jcalculator.harness.UnknownTokenException expected) { refused = expected.token(); }"
+        description: press a hexadecimal letter on the standard page
+    observation: "refused + \"|\" + session.state().display()"
+    invariant: "\"a|0\".equals(observation)"
+
+  # R-029 -- a malformed request field is refused, never reported as an internal failure.
+  - id: SC-REQUEST-INTEGRAL-DURATION
+    requirement: R-029
+    description: A fractional day count is a malformed request, not an internal failure
+    mode: single
+    setup: "dev.jcalculator.harness.HarnessProtocol protocol = new dev.jcalculator.harness.HarnessProtocol(new dev.jcalculator.harness.CalculatorSession()); dev.jcalculator.harness.HarnessProtocol.Outcome outcome = null;"
+    steps:
+      - call: "outcome = protocol.execute(dev.jcalculator.harness.Json.object(\"op\", \"date_add\", \"from\", \"2024-01-01\", \"days\", new java.math.BigDecimal(\"1.5\")));"
+        description: add one and a half days
+    observation: "String.valueOf(outcome.response().get(\"errorCode\")) + \"|\" + outcome.exitCode()"
+    invariant: "\"bad_request|2\".equals(observation)"
+
+  - id: SC-REQUEST-TOKENS-ARRAY
+    requirement: R-029
+    description: A string in tokens is refused with the shape the field expects
+    mode: single
+    setup: "dev.jcalculator.harness.HarnessProtocol protocol = new dev.jcalculator.harness.HarnessProtocol(new dev.jcalculator.harness.CalculatorSession()); dev.jcalculator.harness.HarnessProtocol.Outcome outcome = null;"
+    steps:
+      - call: "outcome = protocol.execute(dev.jcalculator.harness.Json.object(\"op\", \"press\", \"tokens\", \"2 + 3 =\"));"
+        description: send a token string where the field expects an array
+    observation: "String.valueOf(outcome.response().get(\"errorCode\")) + \"|\" + ((String) outcome.response().get(\"message\")).contains(\"array\")"
+    invariant: "\"bad_request|true\".equals(observation)"

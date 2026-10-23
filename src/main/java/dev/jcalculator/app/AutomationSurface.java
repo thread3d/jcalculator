@@ -235,7 +235,7 @@ public final class AutomationSurface {
         for (int index = 0; index < text.length(); index++) {
             final char c = text.charAt(index);
             if (c == '.' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
-                session.press(Tokens.require(String.valueOf(c)));
+                session.press(Tokens.require(String.valueOf(c), mode()));
             } else {
                 throw new IllegalArgumentException("cannot type: " + c);
             }

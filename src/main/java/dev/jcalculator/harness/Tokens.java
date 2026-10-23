@@ -13,8 +13,15 @@ import java.util.TreeSet;
  *
  * <p>{@link dev.jcalculator.app.CalculatorCli}, the harness protocol and the MCP tools must accept
  * exactly the same vocabulary, so the mapping lives here once. A token is matched
- * case-insensitively. Single characters {@code 0}-{@code 9} are digits and {@code a}-{@code f} are
- * hexadecimal digits; everything else is a named key.
+ * case-insensitively. Single characters {@code 0}-{@code 9} are digits on every page and
+ * {@code a}-{@code f} are hexadecimal digits only on the programmer page; everything else is a
+ * named key.
+ *
+ * <p>Two single letters are buttons on every page: {@code c} clears outside the programmer page and
+ * is hexadecimal {@code C} on it, and {@code e} is Euler's constant outside the programmer page and
+ * hexadecimal {@code E} on it. The other hexadecimal letters ({@code a}, {@code b}, {@code d},
+ * {@code f}) exist only on the programmer page, so a front end must resolve them against the active
+ * page instead of guessing: a token that is not a button there is refused, never silently applied.
  *
  * <p>The table is an enum rather than a static map so that it is genuinely immutable: there is no
  * global state a caller could change, and two runs cannot observe different vocabularies.
@@ -109,6 +116,8 @@ public final class Tokens {
         POW2("2^", Command.POW2),
         PI("pi", Command.PI),
         PI_2("π", Command.PI),
+        EULER("e", Command.EULER),
+        EULER_2("euler", Command.EULER),
         RANDOM("rand", Command.RANDOM),
         INVERSE("inv-toggle", Command.INVERSE),
         ROTATE_LEFT("rol", Command.ROTATE_LEFT),
@@ -153,19 +162,42 @@ public final class Tokens {
     }
 
     /**
-     * Resolves a token to a command without knowing the calculator page.
+     * Resolves a token the way the standard page reads it.
      *
-     * <p>This is the right call for a token that has one meaning everywhere. Use
-     * {@link #commandFor(String, CalculatorMode)} when the page disambiguates, which it does for
-     * {@code "c"}.
+     * <p>This is a convenience for a token that has one meaning everywhere — a digit, an operator
+     * or a named key. It is not the right call for a hexadecimal letter: {@code a}, {@code b},
+     * {@code d} and {@code f} are buttons only on the programmer page, so this form returns
+     * {@code null} for them, while {@code c} and {@code e} read as the standard page's CLEAR and
+     * Euler's constant. Whenever the active page is known, use
+     * {@link #commandFor(String, CalculatorMode)} so a page-dependent token cannot be misread.
      *
      * @param token a button name such as {@code "7"}, {@code "+"} or {@code "sqrt"}
-     * @return the command, or {@code null} when the token is not a button
+     * @return the command, or {@code null} when the standard page has no such button
      */
     public static Command commandFor(String token) {
+        return commandFor(token, CalculatorMode.STANDARD);
+    }
+
+    /**
+     * Resolves a token in the context of a calculator page.
+     *
+     * <p>The page decides every single letter that could be a hexadecimal digit, because the keys
+     * differ: the standard and scientific pages label their clear key {@code C} and their constant
+     * key {@code e}, while the programmer page uses those keys for the hexadecimal digits
+     * {@code C} and {@code E} and offers a separate {@code CLR}. The hexadecimal letters
+     * {@code a}, {@code b}, {@code d} and {@code f} are buttons only on the programmer page, so
+     * pressing one elsewhere is refused rather than applied with no effect. Resolving against the
+     * page keeps every front end agreeing with the keypad in front of the user.
+     *
+     * @param token a button name
+     * @param mode  the active calculator page
+     * @return the command, or {@code null} when the token is not a button on that page
+     */
+    public static Command commandFor(String token, CalculatorMode mode) {
         if (token == null || token.isEmpty()) {
             return null;
         }
+        final CalculatorMode page = mode == null ? CalculatorMode.STANDARD : mode;
         final String normalized = token.toLowerCase(Locale.ROOT);
         if (normalized.length() == 1) {
             final char c = normalized.charAt(0);
@@ -173,7 +205,17 @@ public final class Tokens {
                 return Command.values()[Command.ZERO.ordinal() + (c - '0')];
             }
             if (c >= 'a' && c <= 'f') {
-                return Command.values()[Command.A.ordinal() + (c - 'a')];
+                if (page == CalculatorMode.PROGRAMMER) {
+                    return Command.values()[Command.A.ordinal() + (c - 'a')];
+                }
+                // Outside the programmer page a letter is not a digit. `e` and `c` are still
+                // buttons there, resolved by the table entry and the CLEAR special case below.
+                if (c != 'c' && c != 'e') {
+                    return null;
+                }
+            }
+            if (c == 'c' && page != CalculatorMode.PROGRAMMER) {
+                return Command.CLEAR;
             }
         }
         for (Token entry : Token.values()) {
@@ -185,48 +227,55 @@ public final class Tokens {
     }
 
     /**
-     * Resolves a token in the context of a calculator page.
-     *
-     * <p>{@code "c"} is the one token whose meaning depends on the page, because the keys differ:
-     * the standard and scientific pages label their clear key {@code C}, while the programmer page
-     * uses {@code C} for the hexadecimal digit and offers a separate {@code CLR}. Resolving it
-     * against the page keeps every front end agreeing with the keypad in front of the user.
-     *
-     * @param token a button name
-     * @param mode  the active calculator page
-     * @return the command, or {@code null} when the token is not a button
-     */
-    public static Command commandFor(String token, CalculatorMode mode) {
-        if (token != null && "c".equalsIgnoreCase(token)) {
-            return mode == CalculatorMode.PROGRAMMER ? Command.C : Command.CLEAR;
-        }
-        return commandFor(token);
-    }
-
-    /**
      * Resolves a token in the context of a page, refusing an unknown one.
      *
-     * @throws UnknownTokenException when the token is not a button
+     * @throws UnknownTokenException when the token is not a button on that page; its message says
+     *                               why, so a caller can tell a typo from a hexadecimal digit
+     *                               pressed outside the programmer page
      */
     public static Command require(String token, CalculatorMode mode) {
         final Command command = commandFor(token, mode);
         if (command == null) {
-            throw new UnknownTokenException(token);
+            throw new UnknownTokenException(token, refusalMessage(token, mode));
         }
         return command;
     }
 
     /**
-     * Resolves a token, refusing an unknown one.
+     * Resolves a token the way the standard page reads it, refusing an unknown one.
      *
-     * @throws UnknownTokenException when the token is not a button
+     * @throws UnknownTokenException when the token is not a button on the standard page
      */
     public static Command require(String token) {
-        final Command command = commandFor(token);
-        if (command == null) {
-            throw new UnknownTokenException(token);
+        return require(token, CalculatorMode.STANDARD);
+    }
+
+    /**
+     * Explains a refusal: a hexadecimal letter misplaced, or simply no such button.
+     *
+     * <p>Every front end reports the same sentence, so a caller sees the same explanation whether
+     * it pressed the token through the text interface, the JSON protocol or the window.
+     *
+     * @param token a button name that is not a button on that page
+     * @param mode  the page it was pressed on
+     * @return the refusal message {@link UnknownTokenException} carries
+     */
+    public static String refusalMessage(String token, CalculatorMode mode) {
+        final CalculatorMode page = mode == null ? CalculatorMode.STANDARD : mode;
+        final String name = token == null ? "" : token;
+        if (page != CalculatorMode.PROGRAMMER && isHexadecimalLetter(name)) {
+            return "unknown token: " + name + " (the hexadecimal digits a-f are buttons only on the"
+                    + " programmer page)";
         }
-        return command;
+        return "unknown token: " + name + " (no button with that name on the " + page + " page)";
+    }
+
+    private static boolean isHexadecimalLetter(String token) {
+        if (token.length() != 1) {
+            return false;
+        }
+        final char c = Character.toLowerCase(token.charAt(0));
+        return c >= 'a' && c <= 'f';
     }
 
     /** Resolves a mode name such as {@code "scientific"}. */
@@ -239,7 +288,12 @@ public final class Tokens {
         };
     }
 
-    /** Every token the protocol accepts, sorted, for capability discovery. */
+    /**
+     * Every token name in the vocabulary, sorted, for capability discovery.
+     *
+     * <p>The list is the union across pages: {@code a}-{@code f}, {@code c} and {@code e} are listed
+     * once, and the page selects their meaning. See {@link #commandFor(String, CalculatorMode)}.
+     */
     public static List<String> supportedTokens() {
         final TreeSet<String> tokens = new TreeSet<>();
         for (Token entry : Token.values()) {

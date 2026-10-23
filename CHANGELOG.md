@@ -4,6 +4,51 @@ All notable changes to jCalculator are recorded here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-10-23
+
+The journal pays off. Every problem the 1.2.0 journal recorded (four entries, JC-C53044D9,
+JC-80E21685, JC-2320648F and JC-BE96C466) is fixed, and the two defects behind them are now
+requirements: a token means what the active page's keypad shows (R-028), and a malformed request
+field is refused rather than reported as an internal failure (R-029).
+
+### Added
+
+- Requirement R-028 and its scenarios: token resolution is page-aware. Euler's constant has its own
+  token, `e` (and `euler`), which is Euler on the standard and scientific pages and the hexadecimal
+  digit `E` on the programmer page. The letters `a`, `b`, `d` and `f` are buttons only on the
+  programmer page; pressing one elsewhere is refused with an `UnknownTokenException` whose message
+  names the token and says where the hexadecimal digits live, instead of reporting success with an
+  unchanged display. `Tokens.refusalMessage` produces that sentence once, so the text interface, the
+  JSON protocol, the MCP tools, `AutomationSurface` and `UiDriver` all explain a refusal the same way.
+- Requirement R-029 and its scenarios: `Json.integer` refuses a non-integral or oversized number as
+  a `JsonException` naming the field, so `date_add`/`date_subtract` with `1.5` or `1e10` days is a
+  `bad_request` (exit 2) rather than an `internal_error`. `HarnessProtocol.tokensOf` names the
+  expected shape when `tokens` is not an array, so `{"tokens":"2 + 3 ="}` says to use an array or
+  `expression` instead of "missing tokens or expression". Neither case is journalled: malformed
+  caller input is not a problem with the calculator.
+- `TokensTest` (8 tests) and new cases in `JsonTest`, `HarnessProtocolTest`,
+  `HarnessProtocolIssueTest`, `CalculatorCliTest` and `AutomationSurfaceTest`: 193 tests in total.
+
+### Changed
+
+- `Tokens.commandFor(String)` now reads a token the way the standard page does, because a
+  hexadecimal letter has no page-independent meaning; every front end that knows the page uses the
+  page-aware overload. `AutomationSurface.type`, `UiDriver.type` and `CalculatorCli.execute` were
+  mode-blind before and now resolve against the active page, so typing `ff` in standard mode is
+  refused instead of pressing digit commands the engine ignores.
+- `UnknownTokenException` can carry an explanation (`UnknownTokenException(token, message)`); the
+  one-argument constructor is unchanged.
+- `HarnessProtocol.execute`'s unexpected-failure safety net is the named method
+  `HarnessProtocol.unexpectedFailure`, so the journalling of an internal failure is tested directly
+  now that no validated request can produce one.
+
+### Verification
+
+- CodeWitness run `CW-2026-10-23-V7DHP` (copy mode): overall `VERIFIED`, 29/29 requirements
+  verified, 193/193 tests passing, 71 generated scenarios, no counterexamples.
+- jcheck strict profile (T0–T3): 0 errors, 0 warnings.
+- Coverage: 73.2% line, 56.5% branch.
+
 ## [1.2.0] - 2026-10-23
 
 Self-logged issues. The calculator now keeps its own journal of the problems met while it is in
