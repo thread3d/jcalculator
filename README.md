@@ -299,7 +299,9 @@ jcheck check --root .
 ```
 
 `jcheck.toml` points the embedder at the vendored Maven installation. The code is kept clean under
-jcheck's `strict` profile (T0–T3), with no suppressions.
+jcheck's `strict` profile (T0–T3) with no suppressed diagnostics. The only `@SuppressWarnings` in the
+tree are two `"unchecked"` annotations on the generic casts in `harness/Json.java`, the JSON codec;
+they silence a javac warning, not a jcheck finding.
 
 ## Deliberate differences from the original
 
