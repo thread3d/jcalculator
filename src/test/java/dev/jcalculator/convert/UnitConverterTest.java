@@ -1,0 +1,103 @@
+package dev.jcalculator.convert;
+
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class UnitConverterTest {
+
+    private final UnitConverter converter = new UnitConverter();
+
+    private String convert(String category, String from, String to, String value) {
+        return converter.convertAndFormat(
+                UnitCategory.valueOf(category), from, to, value);
+    }
+
+    @Test
+    void catalogueHasEveryCategoryAndUnits() {
+        assertTrue(converter.categories().contains(UnitCategory.LENGTH));
+        assertTrue(converter.units(UnitCategory.LENGTH).size() >= 10);
+        assertTrue(converter.units(UnitCategory.CURRENCY).size() >= 10);
+        assertEquals("Foot", converter.findUnit(UnitCategory.LENGTH, "ft").name());
+    }
+
+    @Test
+    void convertsLengthExactly() {
+        assertEquals("12", convert("LENGTH", "ft", "in", "1"));
+        assertEquals("100", convert("LENGTH", "m", "cm", "1"));
+        assertEquals("1.609344", convert("LENGTH", "mi", "km", "1"));
+        assertEquals("3.28084", convert("LENGTH", "m", "ft", "1"));
+        assertEquals("8.2021", convert("LENGTH", "m", "ft", "2.5"));
+    }
+
+    @Test
+    void convertsWeightAndVolume() {
+        assertEquals("11.02311", convert("WEIGHT", "kg", "lb", "5"));
+        assertEquals("1000", convert("VOLUME", "L", "mL", "1"));
+        assertEquals("8", convert("DATA", "B", "b", "1"));
+        assertEquals("1000", convert("DATA", "MB", "kB", "1"));
+    }
+
+    @Test
+    void convertsTemperatureWithOffsets() {
+        assertEquals("212", convert("TEMPERATURE", "C", "F", "100"));
+        assertEquals("0", convert("TEMPERATURE", "F", "C", "32"));
+        assertEquals("273.15", convert("TEMPERATURE", "C", "K", "0"));
+        assertEquals("37", convert("TEMPERATURE", "F", "C", "98.6"));
+        assertEquals("-40", convert("TEMPERATURE", "F", "C", "-40"));
+    }
+
+    @Test
+    void convertsCurrencyWithTheMockRatios() {
+        assertEquals("0.5", convert("CURRENCY", "MAR", "MON", "1"));
+        assertEquals("2", convert("CURRENCY", "MON", "MAR", "1"));
+        assertEquals("450", convert("CURRENCY", "MAR", "VEN", "0.5"));
+    }
+
+    @Test
+    void temperatureSupportsNegativeValuesButOtherCategoriesDoNot() {
+        assertThrows(IllegalArgumentException.class, () -> convert("LENGTH", "m", "ft", "-1"));
+        assertEquals("-40", convert("TEMPERATURE", "C", "F", "-40"));
+    }
+
+    @Test
+    void unitsOfDifferentCategoriesCannotBeMixed() {
+        final Unit meter = converter.findUnit(UnitCategory.LENGTH, "m");
+        final Unit kilogram = converter.findUnit(UnitCategory.WEIGHT, "kg");
+        assertThrows(IllegalArgumentException.class,
+                () -> converter.convert(meter, kilogram, BigDecimal.ONE));
+    }
+
+    @Test
+    void unknownUnitIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> converter.findUnit(UnitCategory.LENGTH, "parsec"));
+    }
+
+    @Test
+    void displayRoundsToTheOptimalNumberOfDigits() {
+        final BigDecimal value = new BigDecimal("1.234567890123456789");
+        assertEquals("1.234568", converter.formatResult(value, 1, false));
+        assertEquals("1.234567890123457", converter.formatResult(value, 1, true));
+        assertEquals("1", converter.formatResult(new BigDecimal("1.000000"), 1, false));
+        assertEquals("0", converter.formatResult(BigDecimal.ZERO, 4, false));
+    }
+
+    @Test
+    void tinyValuesUseScientificNotation() {
+        final BigDecimal value = new BigDecimal("1.234e-16");
+        assertEquals("1.234000e-16", converter.formatResult(value, 1, false));
+    }
+
+    @Test
+    void settingCategoryPicksSensibleDefaults() {
+        converter.setCurrentCategory(UnitCategory.TEMPERATURE);
+        assertEquals(UnitCategory.TEMPERATURE, converter.currentCategory());
+        assertEquals("C", converter.fromUnit().abbreviation());
+        assertEquals("F", converter.toUnit().abbreviation());
+    }
+}

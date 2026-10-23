@@ -1,0 +1,8 @@
+# jcheck configuration for jCalculator.
+#
+# The project is checked under jcheck's strict profile. maven_home points the Maven embedder at the
+# distribution vendored in .tools/ so the analysis does not depend on a Maven installation being on
+# PATH. Run from the project root:  jcheck check --root .
+
+[project]
+maven_home = ".tools/apache-maven-3.9.16"

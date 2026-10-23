@@ -1,0 +1,728 @@
+# CodeWitness configuration for jCalculator.
+#
+# Every requirement in specs/requirements.md has at least one scenario here. A scenario is an
+# executable claim about the public API, and CodeWitness only counts what it actually runs, so the
+# invariants below are deliberately simple and reviewable: each one is a property the requirement's
+# text states in English.
+#
+# Run from the jcalculator directory:
+#   codewitness verify . --requirements specs/requirements.md --config specs/codewitness.yaml
+#
+# The build is self-contained: mvnw uses the Maven distribution in .tools/ and the local repository
+# in .m2repo, so no network access is required for a normal run.
+
+project:
+  name: jcalculator
+
+language:
+  adapter: java
+
+verification:
+  timeout: 10m
+  max_duration: 30m
+  max_test_generation_iterations: 2
+  max_generated_tests: 60
+
+tests:
+  enabled: true
+
+mutation:
+  enabled: false
+  tool: pitest
+
+property_testing:
+  enabled: true
+  max_scenarios: 10
+
+static_analysis:
+  enabled: true
+  analyzers: [javac, heuristics]
+
+security:
+  enabled: true
+
+llm:
+  enabled: false
+  provider: none
+
+report:
+  html: true
+  json: true
+
+sandbox:
+  mode: local-process
+  allow_network: false
+
+scenarios:
+  # R-001 -- exact rational arithmetic. The search draws signed long operands, including the
+  # boundaries, and checks that subtracting one addend recovers the other exactly.
+  - id: SC-EXACT-SUM
+    requirement: R-001
+    description: Adding two rationals is exact and reversible
+    mode: sequence
+    setup: "dev.jcalculator.core.Rational sum = null;"
+    steps:
+      - call: "sum = dev.jcalculator.core.Rational.of(${a}).add(dev.jcalculator.core.Rational.of(${b}));"
+        description: add two signed 64-bit values as exact rationals
+        inputs:
+          - name: a
+            type: long
+            domain: long
+            values: ["0", "1", "-1", "9223372036854775807", "-9223372036854775808"]
+            range: {min: -1000000000, max: 1000000000}
+          - name: b
+            type: long
+            domain: long
+            values: ["0", "1", "-1", "9223372036854775807", "-9223372036854775808"]
+            range: {min: -1000000000, max: 1000000000}
+    observation: "sum.subtract(dev.jcalculator.core.Rational.of(${b})).compareTo(dev.jcalculator.core.Rational.of(${a}))"
+    invariant: "observation == 0"
+    cases: 200
+    seed: 42
+
+  - id: SC-EXACT-FRACTIONS
+    requirement: R-001
+    description: Thirds, sixths and a half add up to exactly one
+    mode: single
+    setup: "dev.jcalculator.core.Rational total = null;"
+    steps:
+      - call: "total = dev.jcalculator.core.Rational.of(1, 3).add(dev.jcalculator.core.Rational.of(1, 6)).add(dev.jcalculator.core.Rational.of(1, 2));"
+        description: 1/3 + 1/6 + 1/2
+    observation: "total.toDecimalString(16)"
+    invariant: "\"1\".equals(observation)"
+
+  # R-002 -- standard mode has no precedence.
+  - id: SC-STANDARD-ORDER
+    requirement: R-002
+    description: 2 + 3 x 4 in standard mode is 20
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "cli.execute(\"2\"); cli.execute(\"+\"); cli.execute(\"3\"); cli.execute(\"*\"); cli.execute(\"4\"); cli.execute(\"=\");"
+        description: enter the sequence and press equals
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"20\".equals(observation)"
+
+  # R-003 -- scientific mode applies precedence.
+  - id: SC-SCIENTIFIC-PRECEDENCE
+    requirement: R-003
+    description: 2 + 3 x 4 in scientific mode is 14
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+    steps:
+      - call: "cli.execute(\"2\"); cli.execute(\"+\"); cli.execute(\"3\"); cli.execute(\"*\"); cli.execute(\"4\"); cli.execute(\"=\");"
+        description: enter the sequence and press equals
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"14\".equals(observation)"
+
+  # R-004 -- parentheses and implicit multiplication.
+  - id: SC-PARENS-IMPLICIT
+    requirement: R-004
+    description: (8)2 is implicit multiplication and gives 16
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+    steps:
+      - call: "cli.execute(\"(\"); cli.execute(\"8\"); cli.execute(\")\"); cli.execute(\"2\"); cli.execute(\"=\");"
+        description: a closing parenthesis followed by a digit multiplies
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"16\".equals(observation)"
+
+  - id: SC-PARENS-SUM
+    requirement: R-004
+    description: 1 + (0 + 3) evaluates the parentheses first
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+    steps:
+      - call: "cli.execute(\"1\"); cli.execute(\"+\"); cli.execute(\"(\"); cli.execute(\"+\"); cli.execute(\"3\"); cli.execute(\")\");"
+        description: a parenthesised sum is evaluated before the outer addition
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"3\".equals(observation)"
+
+  # R-005 -- division by zero.
+  - id: SC-ZERO-OVER-ZERO
+    requirement: R-005
+    description: 0 / 0 is undefined
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "cli.execute(\"0\"); cli.execute(\"/\"); cli.execute(\"0\"); cli.execute(\"=\");"
+        description: zero divided by zero
+    observation: "cli.manager().primaryDisplay() + \"|\" + cli.manager().isError()"
+    invariant: "\"Result is undefined|true\".equals(observation)"
+
+  - id: SC-DIVIDE-BY-ZERO
+    requirement: R-005
+    description: 1 / 0 is a division-by-zero error
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "cli.execute(\"1\"); cli.execute(\"/\"); cli.execute(\"0\"); cli.execute(\"=\");"
+        description: one divided by zero
+    observation: "cli.manager().primaryDisplay() + \"|\" + cli.manager().isError()"
+    invariant: "\"Cannot divide by zero|true\".equals(observation)"
+
+  # R-006 -- unary functions.
+  - id: SC-SQRT
+    requirement: R-006
+    description: Repeated square roots of 256 reach 2
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+    steps:
+      - call: "cli.execute(\"2\"); cli.execute(\"5\"); cli.execute(\"6\"); cli.execute(\"sqrt\"); cli.execute(\"sqrt\"); cli.execute(\"sqrt\");"
+        description: 256 square-rooted three times
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"2\".equals(observation)"
+
+  - id: SC-FACTORIAL
+    requirement: R-006
+    description: Five factorial is 120
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+    steps:
+      - call: "cli.execute(\"5\"); cli.execute(\"!\");"
+        description: press factorial on 5
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"120\".equals(observation)"
+
+  - id: SC-RECIPROCAL
+    requirement: R-006
+    description: The reciprocal of -100 is -0.01
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "cli.execute(\"1\"); cli.execute(\"0\"); cli.execute(\"0\"); cli.execute(\"+/-\"); cli.execute(\"1/x\");"
+        description: negate 100 and take its reciprocal
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"-0.01\".equals(observation)"
+
+  - id: SC-PERCENT
+    requirement: R-006
+    description: Percent is relative to the pending operation
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "cli.execute(\"5\"); cli.execute(\"0\"); cli.execute(\"+\"); cli.execute(\"2\"); cli.execute(\"0\"); cli.execute(\"%\"); cli.execute(\"=\");"
+        description: 50 plus 20 percent
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"60\".equals(observation)"
+
+  # R-007 -- transcendental functions.
+  - id: SC-LN
+    requirement: R-007
+    description: The natural logarithm of 10 is correct to 32 digits
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+    steps:
+      - call: "cli.execute(\"1\"); cli.execute(\"0\"); cli.execute(\"ln\");"
+        description: ln(10)
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"2.3025850929940456840179914546844\".equals(observation)"
+
+  - id: SC-SQRT2
+    requirement: R-007
+    description: The square root of 2 is correct to 32 digits
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+    steps:
+      - call: "cli.execute(\"2\"); cli.execute(\"sqrt\");"
+        description: sqrt(2)
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"1.4142135623730950488016887242097\".equals(observation)"
+
+  - id: SC-POWER
+    requirement: R-007
+    description: Five squared is 25
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+    steps:
+      - call: "cli.execute(\"5\"); cli.execute(\"^\"); cli.execute(\"2\"); cli.execute(\"=\");"
+        description: 5 to the power 2
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"25\".equals(observation)"
+
+  - id: SC-YROOT
+    requirement: R-007
+    description: The cube root of 8 is 2
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+    steps:
+      - call: "cli.execute(\"8\"); cli.execute(\"yroot\"); cli.execute(\"3\"); cli.execute(\"=\");"
+        description: 8 yroot 3
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"2\".equals(observation)"
+
+  - id: SC-LOG
+    requirement: R-007
+    description: The base-10 logarithm of 10 is 1
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+    steps:
+      - call: "cli.execute(\"1\"); cli.execute(\"0\"); cli.execute(\"log\");"
+        description: log(10)
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"1\".equals(observation)"
+
+  # R-008 -- angle units.
+  - id: SC-RADIANS-SIN
+    requirement: R-008
+    description: The sine of pi radians is zero
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+    steps:
+      - call: "cli.execute(\"rad\"); cli.execute(\"pi\"); cli.execute(\"sin\");"
+        description: sine of pi in radians
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"0\".equals(observation)"
+
+  - id: SC-RADIANS-COS
+    requirement: R-008
+    description: The cosine of pi radians is minus one
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+    steps:
+      - call: "cli.execute(\"rad\"); cli.execute(\"pi\"); cli.execute(\"cos\");"
+        description: cosine of pi in radians
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"-1\".equals(observation)"
+
+  - id: SC-GRADIANS-COS
+    requirement: R-008
+    description: The cosine of 400 gradians is one
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+    steps:
+      - call: "cli.execute(\"grad\"); cli.execute(\"4\"); cli.execute(\"0\"); cli.execute(\"0\"); cli.execute(\"cos\");"
+        description: cosine of 400 gradians
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"1\".equals(observation)"
+
+  - id: SC-SIN-DEGREES
+    requirement: R-008
+    description: The sine of 90 degrees is one
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+    steps:
+      - call: "cli.execute(\"9\"); cli.execute(\"0\"); cli.execute(\"sin\");"
+        description: sine of 90 degrees
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"1\".equals(observation)"
+
+  # R-009 -- programmer mode integers.
+  - id: SC-BYTE-WRAP
+    requirement: R-009
+    description: 127 plus 1 wraps to -128 in byte width
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.PROGRAMMER);"
+    steps:
+      - call: "cli.execute(\"byte\"); cli.execute(\"1\"); cli.execute(\"2\"); cli.execute(\"7\"); cli.execute(\"+\"); cli.execute(\"1\"); cli.execute(\"=\");"
+        description: signed byte addition that overflows
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"-128\".equals(observation)"
+
+  - id: SC-QWORD-SUBTRACT
+    requirement: R-009
+    description: 5 minus 9 is -4 in QWORD mode
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.PROGRAMMER);"
+    steps:
+      - call: "cli.execute(\"5\"); cli.execute(\"-\"); cli.execute(\"9\"); cli.execute(\"=\");"
+        description: subtraction goes negative
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"-4\".equals(observation)"
+
+  - id: SC-INTEGER-DIVISION
+    requirement: R-009
+    description: Programmer division truncates toward zero
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.PROGRAMMER);"
+    steps:
+      - call: "cli.execute(\"5\"); cli.execute(\"/\"); cli.execute(\"2\"); cli.execute(\"=\");"
+        description: 5 divided by 2 in integer mode
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"2\".equals(observation)"
+
+  # R-010 -- bitwise operations.
+  - id: SC-NAND
+    requirement: R-010
+    description: 53 NAND 83 AND evaluates bitwise within the word
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.PROGRAMMER);"
+    steps:
+      - call: "cli.execute(\"5\"); cli.execute(\"3\"); cli.execute(\"nand\"); cli.execute(\"8\"); cli.execute(\"3\"); cli.execute(\"and\");"
+        description: NAND then AND with an omitted right operand
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"-18\".equals(observation)"
+
+  - id: SC-SHIFT
+    requirement: R-010
+    description: Shifting 5 left by 1 gives 10
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.PROGRAMMER);"
+    steps:
+      - call: "cli.execute(\"5\"); cli.execute(\"lsh\"); cli.execute(\"1\"); cli.execute(\"and\");"
+        description: 5 Lsh 1
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"10\".equals(observation)"
+
+  - id: SC-ROTATE
+    requirement: R-010
+    description: Rotating 1 left gives 2
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.PROGRAMMER);"
+    steps:
+      - call: "cli.execute(\"1\"); cli.execute(\"rol\");"
+        description: rotate left once
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"2\".equals(observation)"
+
+  - id: SC-SHIFT-ERROR
+    requirement: R-010
+    description: A shift count at least the word width is an error
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.PROGRAMMER);"
+    steps:
+      - call: "cli.execute(\"byte\"); cli.execute(\"5\"); cli.execute(\"lsh\"); cli.execute(\"9\"); cli.execute(\"and\");"
+        description: shifting a byte by nine bits
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"Invalid input\".equals(observation)"
+
+  # R-011 -- bases.
+  - id: SC-BASE-CONVERT
+    requirement: R-011
+    description: Hex FF converts to 255 decimal without changing the value
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.PROGRAMMER);"
+    steps:
+      - call: "cli.execute(\"hex\"); cli.execute(\"F\"); cli.execute(\"F\"); cli.execute(\"bin\"); cli.execute(\"oct\"); cli.execute(\"dec\");"
+        description: enter FF, then view it in binary, octal and decimal
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"255\".equals(observation)"
+
+  - id: SC-BYTE-HEX
+    requirement: R-011
+    description: Hex FF in byte width is minus one in decimal
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.PROGRAMMER);"
+    steps:
+      - call: "cli.execute(\"byte\"); cli.execute(\"hex\"); cli.execute(\"F\"); cli.execute(\"F\"); cli.execute(\"dec\");"
+        description: the high bit is the sign bit
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"-1\".equals(observation)"
+
+  # R-012 -- memory.
+  - id: SC-MEMORY
+    requirement: R-012
+    description: Store, recall, add and recall again
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "cli.execute(\"5\"); cli.execute(\"ms\"); cli.execute(\"clear\"); cli.execute(\"mr\"); cli.execute(\"m+\"); cli.execute(\"clear\"); cli.execute(\"mr\");"
+        description: store 5, recall it, add it to itself, recall the total
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"10\".equals(observation) && cli.manager().memorizedNumbers().size() == 1"
+
+  - id: SC-MEMORY-SLOTS
+    requirement: R-012
+    description: Several memorized values are kept newest first
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "cli.execute(\"5\"); cli.execute(\"ms\"); cli.execute(\"clear\"); cli.execute(\"7\"); cli.execute(\"ms\"); cli.manager().recallMemory(1);"
+        description: store 5 and 7, then recall the older slot
+    observation: "cli.manager().primaryDisplay() + \"|\" + cli.manager().memorizedNumbers().size()"
+    invariant: "\"5|2\".equals(observation)"
+
+  # R-013 -- history.
+  - id: SC-HISTORY
+    requirement: R-013
+    description: Completed equations are kept newest first
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "cli.execute(\"2\"); cli.execute(\"+\"); cli.execute(\"3\"); cli.execute(\"=\"); cli.execute(\"clear\"); cli.execute(\"4\"); cli.execute(\"*\"); cli.execute(\"5\"); cli.execute(\"=\");"
+        description: two completed calculations
+    observation: "cli.manager().history().size() + \"|\" + cli.manager().history().get(0).expression() + \"|\" + cli.manager().history().get(0).result()"
+    invariant: "\"2|4 × 5=|20\".equals(observation)"
+
+  # R-014 -- modes.
+  - id: SC-MODE-SWITCH
+    requirement: R-014
+    description: Switching mode clears the display
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "cli.execute(\"1\"); cli.execute(\"2\"); cli.execute(\"3\"); cli.setMode(\"scientific\"); cli.execute(\"1\"); cli.execute(\"2\"); cli.execute(\"3\"); cli.setMode(\"programmer\");"
+        description: type in standard, switch to scientific, type, switch to programmer
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"0\".equals(observation)"
+
+  - id: SC-MODE-HISTORY
+    requirement: R-014
+    description: Each mode keeps its own history
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "cli.execute(\"2\"); cli.execute(\"+\"); cli.execute(\"3\"); cli.execute(\"=\"); cli.setMode(\"scientific\");"
+        description: complete a calculation, then change mode
+    observation: "cli.manager().history(dev.jcalculator.engine.CalculatorMode.STANDARD).size() + \"|\" + cli.manager().history().size()"
+    invariant: "\"1|0\".equals(observation)"
+
+  # R-015 -- date difference.
+  - id: SC-DATE-DIFF
+    requirement: R-015
+    description: A full leap year breaks down into months, weeks and days
+    mode: single
+    setup: "dev.jcalculator.date.DateCalculationEngine engine = new dev.jcalculator.date.DateCalculationEngine(); dev.jcalculator.date.DateDifference difference = null;"
+    steps:
+      - call: "difference = engine.tryGetDateDifference(java.time.LocalDate.parse(\"2024-01-01\"), java.time.LocalDate.parse(\"2024-12-31\"), dev.jcalculator.date.DateUnit.ALL);"
+        description: 1 January 2024 to 31 December 2024
+    observation: "difference.year() + \",\" + difference.month() + \",\" + difference.week() + \",\" + difference.day()"
+    invariant: "\"0,11,4,2\".equals(observation)"
+
+  - id: SC-DATE-SYMMETRY
+    requirement: R-015
+    description: The difference is the same in both directions
+    mode: sequence
+    setup: "dev.jcalculator.date.DateCalculationEngine engine = new dev.jcalculator.date.DateCalculationEngine(); dev.jcalculator.date.DateDifference forward = null; dev.jcalculator.date.DateDifference backward = null;"
+    steps:
+      - call: "java.time.LocalDate dateA = java.time.LocalDate.ofEpochDay(${dayA}); java.time.LocalDate dateB = java.time.LocalDate.ofEpochDay(${dayB}); forward = engine.tryGetDateDifference(dateA, dateB, dev.jcalculator.date.DateUnit.ALL); backward = engine.tryGetDateDifference(dateB, dateA, dev.jcalculator.date.DateUnit.ALL);"
+        description: compare the two directions
+        inputs:
+          - name: dayA
+            type: long
+            domain: long
+            values: ["-100000", "0", "100000"]
+            range: {min: -100000, max: 100000}
+          - name: dayB
+            type: long
+            domain: long
+            values: ["-100000", "0", "100000"]
+            range: {min: -100000, max: 100000}
+    observation: "forward.equals(backward)"
+    invariant: "observation"
+    cases: 100
+    seed: 42
+
+  # R-016 -- date arithmetic.
+  - id: SC-DATE-MONTH-END
+    requirement: R-016
+    description: 31 January plus one month is 29 February 2024
+    mode: single
+    setup: "dev.jcalculator.date.DateCalculationEngine engine = new dev.jcalculator.date.DateCalculationEngine(); java.time.LocalDate result = null;"
+    steps:
+      - call: "result = engine.addDuration(java.time.LocalDate.parse(\"2024-01-31\"), new dev.jcalculator.date.DateDifference(0, 1, 0, 0));"
+        description: add one month to a month-end date
+    observation: "result.toString()"
+    invariant: "\"2024-02-29\".equals(observation)"
+
+  - id: SC-DATE-LEAP
+    requirement: R-016
+    description: 29 February 2020 plus one year is 28 February 2021
+    mode: single
+    setup: "dev.jcalculator.date.DateCalculationEngine engine = new dev.jcalculator.date.DateCalculationEngine(); java.time.LocalDate result = null;"
+    steps:
+      - call: "result = engine.addDuration(java.time.LocalDate.parse(\"2020-02-29\"), new dev.jcalculator.date.DateDifference(1, 0, 0, 0));"
+        description: add one year to a leap day
+    observation: "result.toString()"
+    invariant: "\"2021-02-28\".equals(observation)"
+
+  - id: SC-DATE-BOUNDS
+    requirement: R-016
+    description: A date before 1601 is rejected as out of range
+    mode: single
+    setup: "dev.jcalculator.date.DateCalculationEngine engine = new dev.jcalculator.date.DateCalculationEngine(); java.time.LocalDate result = null;"
+    steps:
+      - call: "result = engine.subtractDuration(java.time.LocalDate.of(1601, 1, 1), new dev.jcalculator.date.DateDifference(0, 0, 0, 1));"
+        description: subtract one day from the minimum supported date
+    observation: "result == null"
+    invariant: "observation"
+
+  # R-017 -- unit conversion.
+  - id: SC-LENGTH
+    requirement: R-017
+    description: 2.5 metres is 8.2021 feet
+    mode: single
+    setup: "dev.jcalculator.convert.UnitConverter converter = new dev.jcalculator.convert.UnitConverter(); java.lang.String converted = null;"
+    steps:
+      - call: "converted = converter.convertAndFormat(dev.jcalculator.convert.UnitCategory.LENGTH, \"m\", \"ft\", \"2.5\");"
+        description: convert metres to feet
+    observation: "converted"
+    invariant: "\"8.2021\".equals(observation)"
+
+  - id: SC-LENGTH-PROPERTY
+    requirement: R-017
+    description: Metres to centimetres multiplies by exactly one hundred
+    mode: sequence
+    setup: "dev.jcalculator.convert.UnitConverter converter = new dev.jcalculator.convert.UnitConverter(); java.math.BigDecimal centimeters = null;"
+    steps:
+      - call: "centimeters = converter.convert(dev.jcalculator.convert.UnitCategory.LENGTH, \"m\", \"cm\", ${value});"
+        description: convert a decimal number of metres
+        inputs:
+          - name: value
+            type: java.math.BigDecimal
+            domain: decimal
+            values: ["0", "1", "2.5", "1000.0001"]
+            range: {min: 0, max: 10000, scale: 4}
+    observation: "centimeters.compareTo(${value}.multiply(new java.math.BigDecimal(\"100\")))"
+    invariant: "observation == 0"
+    cases: 100
+    seed: 42
+
+  - id: SC-DATA
+    requirement: R-017
+    description: One megabyte is 1000 kilobytes
+    mode: single
+    setup: "dev.jcalculator.convert.UnitConverter converter = new dev.jcalculator.convert.UnitConverter(); java.lang.String converted = null;"
+    steps:
+      - call: "converted = converter.convertAndFormat(dev.jcalculator.convert.UnitCategory.DATA, \"MB\", \"kB\", \"1\");"
+        description: convert megabytes to kilobytes
+    observation: "converted"
+    invariant: "\"1000\".equals(observation)"
+
+  - id: SC-VOLUME
+    requirement: R-017
+    description: One litre is 1000 millilitres
+    mode: single
+    setup: "dev.jcalculator.convert.UnitConverter converter = new dev.jcalculator.convert.UnitConverter(); java.lang.String converted = null;"
+    steps:
+      - call: "converted = converter.convertAndFormat(dev.jcalculator.convert.UnitCategory.VOLUME, \"L\", \"mL\", \"1\");"
+        description: convert litres to millilitres
+    observation: "converted"
+    invariant: "\"1000\".equals(observation)"
+
+  - id: SC-CROSS-CATEGORY
+    requirement: R-017
+    description: A conversion between different categories is rejected
+    mode: single
+    setup: "dev.jcalculator.convert.UnitConverter converter = new dev.jcalculator.convert.UnitConverter(); java.lang.String outcome = null;"
+    steps:
+      - call: "try { converter.convert(dev.jcalculator.convert.UnitCategory.LENGTH, \"m\", \"kg\", java.math.BigDecimal.ONE); outcome = \"accepted\"; } catch (java.lang.IllegalArgumentException expected) { outcome = \"rejected\"; }"
+        description: attempt to convert metres to kilograms
+    observation: "outcome"
+    invariant: "\"rejected\".equals(observation)"
+
+  # R-018 -- temperature.
+  - id: SC-TEMPERATURE
+    requirement: R-018
+    description: 100 Celsius is 212 Fahrenheit
+    mode: single
+    setup: "dev.jcalculator.convert.UnitConverter converter = new dev.jcalculator.convert.UnitConverter(); java.lang.String converted = null;"
+    steps:
+      - call: "converted = converter.convertAndFormat(dev.jcalculator.convert.UnitCategory.TEMPERATURE, \"C\", \"F\", \"100\");"
+        description: convert boiling point to Fahrenheit
+    observation: "converted"
+    invariant: "\"212\".equals(observation)"
+
+  - id: SC-TEMPERATURE-NEGATIVE
+    requirement: R-018
+    description: Minus 40 Celsius is minus 40 Fahrenheit
+    mode: single
+    setup: "dev.jcalculator.convert.UnitConverter converter = new dev.jcalculator.convert.UnitConverter(); java.lang.String converted = null;"
+    steps:
+      - call: "converted = converter.convertAndFormat(dev.jcalculator.convert.UnitCategory.TEMPERATURE, \"C\", \"F\", \"-40\");"
+        description: convert a negative temperature
+    observation: "converted"
+    invariant: "\"-40\".equals(observation)"
+
+  # R-019 -- currency.
+  - id: SC-CURRENCY
+    requirement: R-019
+    description: One Martian Dollar is half a Moon Buck
+    mode: single
+    setup: "dev.jcalculator.convert.UnitConverter converter = new dev.jcalculator.convert.UnitConverter(); java.lang.String converted = null;"
+    steps:
+      - call: "converted = converter.convertAndFormat(dev.jcalculator.convert.UnitCategory.CURRENCY, \"MAR\", \"MON\", \"1\");"
+        description: convert one Martian Dollar to Moon Bucks
+    observation: "converted"
+    invariant: "\"0.5\".equals(observation)"
+
+  # R-020 -- formatting.
+  - id: SC-GROUPING
+    requirement: R-020
+    description: Decimal digits are grouped in threes
+    mode: single
+    setup: "java.lang.String grouped = dev.jcalculator.format.NumberFormatter.group(\"1234567\", 10);"
+    steps:
+      - call: "grouped = dev.jcalculator.format.NumberFormatter.group(\"1234567\", 10);"
+        description: group a seven-digit number
+    observation: "grouped"
+    invariant: "\"1,234,567\".equals(observation)"
+
+  - id: SC-PRECISION
+    requirement: R-020
+    description: One third is shown with sixteen significant digits
+    mode: single
+    setup: "dev.jcalculator.core.Rational third = dev.jcalculator.core.Rational.of(1, 3);"
+    steps:
+      - call: "third = dev.jcalculator.core.Rational.of(1, 3);"
+        description: render one third in standard precision
+    observation: "third.toDecimalString(16)"
+    invariant: "\"0.3333333333333333\".equals(observation)"
+
+  - id: SC-TRIM
+    requirement: R-020
+    description: Trailing zeros are not displayed
+    mode: single
+    setup: "dev.jcalculator.core.Rational value = dev.jcalculator.core.Rational.of(3, 2);"
+    steps:
+      - call: "value = dev.jcalculator.core.Rational.of(3, 2);"
+        description: render one and a half
+    observation: "value.toDecimalString(16)"
+    invariant: "\"1.5\".equals(observation)"
+
+  - id: SC-HEX-GROUPING
+    requirement: R-020
+    description: Hexadecimal digits are grouped in fours
+    mode: single
+    setup: "java.lang.String grouped = dev.jcalculator.format.NumberFormatter.group(\"FFFFFFFFFFFFFFFF\", 16);"
+    steps:
+      - call: "grouped = dev.jcalculator.format.NumberFormatter.group(\"FFFFFFFFFFFFFFFF\", 16);"
+        description: group sixteen hex digits
+    observation: "grouped"
+    invariant: "\"FFFF FFFF FFFF FFFF\".equals(observation)"
+
+  # R-021 -- error state.
+  - id: SC-ERROR-FREEZE
+    requirement: R-021
+    description: Digits do not change the display while the calculator is in error
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "cli.execute(\"1\"); cli.execute(\"/\"); cli.execute(\"0\"); cli.execute(\"=\"); cli.execute(\"9\"); cli.execute(\"+\");"
+        description: trigger an error, then press digits and an operator
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"Cannot divide by zero\".equals(observation)"
+
+  - id: SC-ERROR-RECOVERY
+    requirement: R-021
+    description: Clearing an error starts a new calculation
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "cli.execute(\"1\"); cli.execute(\"/\"); cli.execute(\"0\"); cli.execute(\"=\"); cli.execute(\"clear\"); cli.execute(\"9\");"
+        description: clear the error and type a new number
+    observation: "cli.manager().primaryDisplay() + \"|\" + cli.manager().isError()"
+    invariant: "\"9|false\".equals(observation)"
+
+  # R-022 -- entry editing.
+  - id: SC-BACKSPACE
+    requirement: R-022
+    description: Backspace removes the last typed digit
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "cli.execute(\"1\"); cli.execute(\"2\"); cli.execute(\"3\"); cli.execute(\"back\"); cli.execute(\"back\");"
+        description: delete two of three digits
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"1\".equals(observation)"
+
+  - id: SC-CLEAR-ENTRY
+    requirement: R-022
+    description: Clear entry keeps the pending operation
+    mode: single
+    setup: "dev.jcalculator.app.CalculatorCli cli = new dev.jcalculator.app.CalculatorCli(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "cli.execute(\"1\"); cli.execute(\"2\"); cli.execute(\"+\"); cli.execute(\"5\"); cli.execute(\"ce\"); cli.execute(\"2\"); cli.execute(\"+\");"
+        description: abandon the 5 and continue with 2
+    observation: "cli.manager().primaryDisplay()"
+    invariant: "\"14\".equals(observation)"

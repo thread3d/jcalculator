@@ -1,0 +1,7 @@
+target/
+.m2repo/
+.tools/
+.codewitness/
+.idea/
+*.iml
+.DS_Store
