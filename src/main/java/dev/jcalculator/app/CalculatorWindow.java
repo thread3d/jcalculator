@@ -3,7 +3,6 @@ package dev.jcalculator.app;
 import dev.jcalculator.engine.CalculatorMode;
 import dev.jcalculator.engine.Command;
 import dev.jcalculator.engine.HistoryEntry;
-import dev.jcalculator.manager.CalculatorManager;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -22,26 +21,34 @@ import javax.swing.UIManager;
 import javax.swing.WindowConstants;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 
 /**
  * Swing front end for jCalculator.
  *
  * <p>The original application is a XAML page; this is the same calculator as a desktop window:
- * a mode selector, the expression line, the display, and the keys of the selected mode. It talks to
- * the same {@link CalculatorManager} the command-line interface and the tests use, so the two front
- * ends cannot drift apart.
+ * a mode selector, the expression line, the display, and the keys of the selected mode. It renders
+ * an {@link AutomationSurface}, which is also the surface a harness drives, so the window and every
+ * other front end share one state machine.
+ *
+ * <p>Every button carries its label as both its component name and its accessible name, and the
+ * display, expression line and selectors do too. That is what lets an automation layer — or an
+ * accessibility tool — find a control by name instead of by screen position.
  */
 public final class CalculatorWindow extends JFrame {
 
     private final Font displayFont = new Font(Font.SANS_SERIF, Font.BOLD, 42);
     private final Font expressionFont = new Font(Font.SANS_SERIF, Font.PLAIN, 16);
 
-    private final CalculatorManager manager = new CalculatorManager();
+    private final AutomationSurface surface = new AutomationSurface();
     private final JLabel expressionLabel = new JLabel(" ", SwingConstants.RIGHT);
     private final JTextField displayField = new JTextField("0");
     private final JComboBox<String> modeSelector = new JComboBox<>(new String[]{"Standard", "Scientific", "Programmer"});
@@ -50,6 +57,13 @@ public final class CalculatorWindow extends JFrame {
     private final JComboBox<String> angleSelector = new JComboBox<>(new String[]{"DEG", "RAD", "GRAD"});
     private final JPanel keypad = new JPanel(new GridLayout(0, 5, 6, 6));
     private final JPanel sideButtons = new JPanel(new GridLayout(0, 1, 6, 6));
+
+    /**
+     * True while {@link #refresh()} is writing the selectors, so their listeners can ignore the
+     * echo. {@code JComboBox.setSelectedIndex} fires even when the index does not change, and an
+     * echoed RADIX or ANGLE command would otherwise abandon the number being typed.
+     */
+    private boolean refreshing;
 
     public CalculatorWindow() {
         super(AppInfo.displayVersion());
@@ -92,39 +106,8 @@ public final class CalculatorWindow extends JFrame {
         body.add(keypad, BorderLayout.CENTER);
         add(body, BorderLayout.SOUTH);
 
-        modeSelector.addActionListener(event -> {
-            manager.setMode(switch (modeSelector.getSelectedIndex()) {
-                case 1 -> CalculatorMode.SCIENTIFIC;
-                case 2 -> CalculatorMode.PROGRAMMER;
-                default -> CalculatorMode.STANDARD;
-            });
-            rebuild();
-            refresh();
-        });
-        baseSelector.addActionListener(event -> {
-            press(switch (baseSelector.getSelectedIndex()) {
-                case 1 -> Command.RADIX_16;
-                case 2 -> Command.RADIX_8;
-                case 3 -> Command.RADIX_2;
-                default -> Command.RADIX_10;
-            });
-        });
-        widthSelector.addActionListener(event -> {
-            press(switch (widthSelector.getSelectedIndex()) {
-                case 1 -> Command.WIDTH_DWORD;
-                case 2 -> Command.WIDTH_WORD;
-                case 3 -> Command.WIDTH_BYTE;
-                default -> Command.WIDTH_QWORD;
-            });
-        });
-        angleSelector.addActionListener(event -> {
-            press(switch (angleSelector.getSelectedIndex()) {
-                case 1 -> Command.ANGLE_RADIANS;
-                case 2 -> Command.ANGLE_GRADIANS;
-                default -> Command.ANGLE_DEGREES;
-            });
-        });
-
+        installAccessibleNames();
+        installSelectors();
         installKeyboardShortcuts();
         rebuild();
         refresh();
@@ -143,118 +126,161 @@ public final class CalculatorWindow extends JFrame {
         });
     }
 
+    // ---- Automation accessors ---------------------------------------------------------------------
+
+    /** The controller the window renders. */
+    public AutomationSurface surface() {
+        return surface;
+    }
+
+    /** The text currently rendered in the display field. */
+    public String displayText() {
+        return displayField.getText();
+    }
+
+    /** The text currently rendered in the expression line. */
+    public String expressionText() {
+        return expressionLabel.getText().trim();
+    }
+
+    /** The accessible name of the display control, which automation tools key off. */
+    public String displayAccessibleName() {
+        return displayField.getAccessibleContext().getAccessibleName();
+    }
+
+    /** Finds a visible button by the label it shows. */
+    public Optional<JButton> findButton(String label) {
+        for (Component component : keypad.getComponents()) {
+            if (component instanceof JButton button && label.equals(button.getText())) {
+                return Optional.of(button);
+            }
+        }
+        for (Component component : sideButtons.getComponents()) {
+            if (component instanceof JButton button && label.equals(button.getText())) {
+                return Optional.of(button);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Every label currently on screen, keypad first. */
+    public List<String> buttonLabels() {
+        final List<String> labels = new ArrayList<>();
+        for (Component component : sideButtons.getComponents()) {
+            if (component instanceof JButton button) {
+                labels.add(button.getText());
+            }
+        }
+        for (Component component : keypad.getComponents()) {
+            if (component instanceof JButton button) {
+                labels.add(button.getText());
+            }
+        }
+        return List.copyOf(labels);
+    }
+
+    /** Clicks the button with this label, exactly as a user would. */
+    public void clickButton(String label) {
+        findButton(label)
+                .orElseThrow(() -> new IllegalArgumentException("no button labelled " + label))
+                // Zero press time: the action still fires, but a harness does not pay the default
+                // 68 ms animation pause for every key.
+                .doClick(0);
+    }
+
+    /** Presses an engine command, as a keyboard shortcut does. */
+    public void pressCommand(Command command) {
+        press(command);
+    }
+
+    /** Selects a page through the mode selector. */
+    public void selectMode(CalculatorMode mode) {
+        modeSelector.setSelectedIndex(switch (mode) {
+            case SCIENTIFIC -> 1;
+            case PROGRAMMER -> 2;
+            case STANDARD -> 0;
+        });
+    }
+
     // ---- Layout ---------------------------------------------------------------------------------
+
+    private void installAccessibleNames() {
+        displayField.setName("display");
+        displayField.getAccessibleContext().setAccessibleName("Display");
+        expressionLabel.setName("expression");
+        expressionLabel.getAccessibleContext().setAccessibleName("Expression");
+        modeSelector.setName("mode");
+        modeSelector.getAccessibleContext().setAccessibleName("Mode");
+        baseSelector.setName("base");
+        baseSelector.getAccessibleContext().setAccessibleName("Base");
+        widthSelector.setName("width");
+        widthSelector.getAccessibleContext().setAccessibleName("Width");
+        angleSelector.setName("angle");
+        angleSelector.getAccessibleContext().setAccessibleName("Angle");
+        keypad.getAccessibleContext().setAccessibleName("Keypad");
+        sideButtons.getAccessibleContext().setAccessibleName("Memory");
+    }
+
+    private void installSelectors() {
+        modeSelector.addActionListener(event -> {
+            if (refreshing) {
+                return;
+            }
+            surface.setMode(switch (modeSelector.getSelectedIndex()) {
+                case 1 -> CalculatorMode.SCIENTIFIC;
+                case 2 -> CalculatorMode.PROGRAMMER;
+                default -> CalculatorMode.STANDARD;
+            });
+            rebuild();
+            refresh();
+        });
+        baseSelector.addActionListener(event -> {
+            if (refreshing) {
+                return;
+            }
+            press(switch (baseSelector.getSelectedIndex()) {
+                case 1 -> Command.RADIX_16;
+                case 2 -> Command.RADIX_8;
+                case 3 -> Command.RADIX_2;
+                default -> Command.RADIX_10;
+            });
+        });
+        widthSelector.addActionListener(event -> {
+            if (refreshing) {
+                return;
+            }
+            press(switch (widthSelector.getSelectedIndex()) {
+                case 1 -> Command.WIDTH_DWORD;
+                case 2 -> Command.WIDTH_WORD;
+                case 3 -> Command.WIDTH_BYTE;
+                default -> Command.WIDTH_QWORD;
+            });
+        });
+        angleSelector.addActionListener(event -> {
+            if (refreshing) {
+                return;
+            }
+            press(switch (angleSelector.getSelectedIndex()) {
+                case 1 -> Command.ANGLE_RADIANS;
+                case 2 -> Command.ANGLE_GRADIANS;
+                default -> Command.ANGLE_DEGREES;
+            });
+        });
+    }
 
     private void rebuild() {
         keypad.removeAll();
         sideButtons.removeAll();
 
-        addSide("MC", Command.MEMORY_CLEAR);
-        addSide("MR", Command.MEMORY_RECALL);
-        addSide("M+", Command.MEMORY_ADD);
-        addSide("M-", Command.MEMORY_SUBTRACT);
-        addSide("MS", Command.MEMORY_STORE);
-
-        if (manager.mode() == CalculatorMode.PROGRAMMER) {
-            add("A", Command.A);
-            add("B", Command.B);
-            add("C", Command.C);
-            add("D", Command.D);
-            add("E", Command.E);
-            add("F", Command.F);
-            add("7", Command.SEVEN);
-            add("8", Command.EIGHT);
-            add("9", Command.NINE);
-            add("÷", Command.DIVIDE);
-            add("AND", Command.AND);
-            add("4", Command.FOUR);
-            add("5", Command.FIVE);
-            add("6", Command.SIX);
-            add("×", Command.MULTIPLY);
-            add("OR", Command.OR);
-            add("1", Command.ONE);
-            add("2", Command.TWO);
-            add("3", Command.THREE);
-            add("-", Command.SUBTRACT);
-            add("XOR", Command.XOR);
-            add("0", Command.ZERO);
-            add("±", Command.NEGATE);
-            add("=", Command.EQUALS);
-            add("+", Command.ADD);
-            add("NOT", Command.COMPLEMENT);
-            add("Lsh", Command.LEFT_SHIFT);
-            add("Rsh", Command.RIGHT_SHIFT);
-            add("ROL", Command.ROTATE_LEFT);
-            add("ROR", Command.ROTATE_RIGHT);
-            add("C", Command.CLEAR_ENTRY);
-            add("⌫", Command.BACKSPACE);
-            add("(", Command.OPEN_PAREN);
-            add(")", Command.CLOSE_PAREN);
-            add("MOD", Command.MOD);
-            addAction("HIST", this::showHistory);
-            add("CLR", Command.CLEAR);
-        } else if (manager.mode() == CalculatorMode.SCIENTIFIC) {
-            add("sin", Command.SIN);
-            add("cos", Command.COS);
-            add("tan", Command.TAN);
-            add("ln", Command.LN);
-            add("log", Command.LOG);
-            add("x²", Command.SQR);
-            add("√", Command.SQRT);
-            add("xʸ", Command.POWER);
-            add("π", Command.PI);
-            add("e", Command.EULER);
-            add("n!", Command.FACTORIAL);
-            add("1/x", Command.RECIPROCAL);
-            add("(", Command.OPEN_PAREN);
-            add(")", Command.CLOSE_PAREN);
-            add("%", Command.PERCENT);
-            add("7", Command.SEVEN);
-            add("8", Command.EIGHT);
-            add("9", Command.NINE);
-            add("÷", Command.DIVIDE);
-            add("C", Command.CLEAR);
-            add("4", Command.FOUR);
-            add("5", Command.FIVE);
-            add("6", Command.SIX);
-            add("×", Command.MULTIPLY);
-            add("CE", Command.CLEAR_ENTRY);
-            add("1", Command.ONE);
-            add("2", Command.TWO);
-            add("3", Command.THREE);
-            add("-", Command.SUBTRACT);
-            add("⌫", Command.BACKSPACE);
-            add("0", Command.ZERO);
-            add("±", Command.NEGATE);
-            add(".", Command.DECIMAL_POINT);
-            add("+", Command.ADD);
-            add("=", Command.EQUALS);
-        } else {
-            add("%", Command.PERCENT);
-            add("√", Command.SQRT);
-            add("x²", Command.SQR);
-            add("1/x", Command.RECIPROCAL);
-            add("CE", Command.CLEAR_ENTRY);
-            add("7", Command.SEVEN);
-            add("8", Command.EIGHT);
-            add("9", Command.NINE);
-            add("÷", Command.DIVIDE);
-            add("C", Command.CLEAR);
-            add("4", Command.FOUR);
-            add("5", Command.FIVE);
-            add("6", Command.SIX);
-            add("×", Command.MULTIPLY);
-            add("⌫", Command.BACKSPACE);
-            add("1", Command.ONE);
-            add("2", Command.TWO);
-            add("3", Command.THREE);
-            add("-", Command.SUBTRACT);
-            add("±", Command.NEGATE);
-            add("0", Command.ZERO);
-            add(".", Command.DECIMAL_POINT);
-            add("=", Command.EQUALS);
-            add("+", Command.ADD);
-            addAction("HIST", this::showHistory);
+        for (AutomationSurface.Key key : AutomationSurface.sideKeys()) {
+            addButton(sideButtons, key.label(), key.command());
+        }
+        for (AutomationSurface.Key key : surface.keypadKeys()) {
+            if (key.isCommand()) {
+                addButton(keypad, key.label(), key.command());
+            } else {
+                addActionButton(keypad, key.label());
+            }
         }
 
         keypad.setVisible(true);
@@ -264,26 +290,29 @@ public final class CalculatorWindow extends JFrame {
         sideButtons.repaint();
     }
 
-    private void add(String label, Command command) {
+    private void addButton(JPanel panel, String label, Command command) {
         final JButton button = new JButton(label);
         button.setFocusable(false);
+        button.setName(label);
+        button.getAccessibleContext().setAccessibleName(label);
         button.addActionListener(event -> press(command));
-        keypad.add(button);
-    }
-
-    private void addSide(String label, Command command) {
-        final JButton button = new JButton(label);
-        button.setFocusable(false);
-        button.addActionListener(event -> press(command));
-        sideButtons.add(button);
+        panel.add(button);
     }
 
     /** Adds a button that runs an application action rather than an engine command. */
-    private void addAction(String label, Runnable action) {
+    private void addActionButton(JPanel panel, String label) {
         final JButton button = new JButton(label);
         button.setFocusable(false);
-        button.addActionListener(event -> action.run());
-        keypad.add(button);
+        button.setName(label);
+        button.getAccessibleContext().setAccessibleName(label);
+        button.addActionListener(event -> runAction(label));
+        panel.add(button);
+    }
+
+    private void runAction(String label) {
+        if ("HIST".equals(label)) {
+            showHistory();
+        }
     }
 
     private void installKeyboardShortcuts() {
@@ -352,28 +381,33 @@ public final class CalculatorWindow extends JFrame {
     // ---- Actions --------------------------------------------------------------------------------
 
     private void press(Command command) {
-        manager.sendCommand(command);
+        surface.pressCommand(command);
         refresh();
     }
 
     private void refresh() {
-        displayField.setText(manager.primaryDisplay());
-        displayField.setForeground(manager.isError() ? Color.RED : Color.BLACK);
-        expressionLabel.setText(manager.expression().isEmpty() ? " " : manager.expression());
-        baseSelector.setSelectedIndex(switch (manager.engine().radix()) {
-            case 16 -> 1;
-            case 8 -> 2;
-            case 2 -> 3;
-            default -> 0;
-        });
-        widthSelector.setSelectedIndex(manager.engine().width().ordinal());
-        angleSelector.setSelectedIndex(manager.engine().angleType().ordinal());
+        refreshing = true;
+        try {
+            displayField.setText(surface.display());
+            displayField.setForeground(surface.isError() ? Color.RED : Color.BLACK);
+            expressionLabel.setText(surface.expression().isEmpty() ? " " : surface.expression());
+            baseSelector.setSelectedIndex(switch (surface.radix()) {
+                case 16 -> 1;
+                case 8 -> 2;
+                case 2 -> 3;
+                default -> 0;
+            });
+            widthSelector.setSelectedIndex(surface.width().ordinal());
+            angleSelector.setSelectedIndex(surface.angleType().ordinal());
+        } finally {
+            refreshing = false;
+        }
     }
 
     /** Shows the history in a small window; used by the HISTORY key. */
     private void showHistory() {
         final StringBuilder text = new StringBuilder();
-        for (HistoryEntry entry : manager.history()) {
+        for (HistoryEntry entry : surface.history()) {
             text.append(entry.expression()).append(' ').append(entry.result()).append('\n');
         }
         final JTextArea area = new JTextArea(text.toString(), 12, 32);

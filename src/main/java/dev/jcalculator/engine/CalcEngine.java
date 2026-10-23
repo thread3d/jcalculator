@@ -10,6 +10,7 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Random;
 
 /**
@@ -95,10 +96,24 @@ public final class CalcEngine {
     }
 
     public CalcEngine(CalculatorMode mode, EngineListener listener) {
+        this(mode, listener, new Random());
+    }
+
+    /**
+     * Creates an engine that draws {@code RANDOM} values from a caller-supplied source.
+     *
+     * <p>A harness that passes a seeded {@link Random} gets the same sequence of values on every run,
+     * which is what makes the random key reproducible.
+     *
+     * @param mode     the calculator page
+     * @param listener the state observer, or {@code null}
+     * @param random   the source used by the random key
+     */
+    public CalcEngine(CalculatorMode mode, EngineListener listener, Random random) {
         this.mode = mode;
         this.precision = mode.precision();
         this.listener = listener;
-        this.random = new Random();
+        this.random = Objects.requireNonNull(random, "random");
         for (int i = 0; i < MAX_PRECEDENCE_DEPTH; i++) {
             parenValues[i] = Rational.zero();
             precedenceValues[i] = Rational.zero();

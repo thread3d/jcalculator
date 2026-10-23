@@ -154,3 +154,40 @@ input again and starts from zero.
 Backspace removes the last typed character, and backspacing past the end of the number leaves zero.
 CLEAR ENTRY abandons the number being typed but keeps the pending operation and the rest of the
 expression. `12 + 5 CE 2 +` therefore shows 14.
+
+# R-023 The harness session is silent, deterministic and explicit about failure
+
+A `CalculatorSession` drives the calculator without touching the terminal. It accepts the same
+button tokens as the text interface, reports its state as an immutable snapshot, and never writes to
+standard output, blocks for input or exits the process. A token that is not a button is refused with
+an `UnknownTokenException` carrying the token; it is never ignored, because a harness that silently
+drops input produces a wrong answer with a success status. Two sessions created with the same seed
+produce the same sequence of values for the random key, so a recorded run can be replayed.
+
+# R-024 The JSON harness protocol is line-oriented and machine-readable
+
+`HarnessProtocol` maps one request to one JSON response. A bare line of tokens is a press sequence;
+a JSON request selects an operation. Every response has the same shape: `ok` says whether the
+operation produced a defined result, `error` says whether the calculator is in its error state,
+`errorCode` is a stable machine-readable reason when `ok` is false, and the display, expression, mode,
+base, width, angle unit, `result`, history and memory are always present. The process exit code is 0
+on success, 1 for a calculation error and 2 for a malformed request.
+
+# R-025 The MCP server exposes the calculator over standard input and output
+
+`McpServer` speaks newline-delimited JSON-RPC 2.0 on standard input and output and writes nothing
+else to standard output. It answers `initialize` with a negotiated protocol version and the `tools`
+capability, lists the calculator tools with JSON Schema inputs, and executes `tools/call` against the
+same session every other front end uses. Notifications produce no response. An unknown method is a
+`-32601` error, an unknown tool is `-32602`, and malformed JSON is `-32700`. A tool that runs but
+whose calculation fails reports `isError` in its result rather than a protocol error.
+
+# R-026 The desktop window is drivable without a screen
+
+`AutomationSurface` is the window's controller and the window renders it, so the two cannot disagree.
+It publishes each page's key layout by label, resolves a click by label against the active page, and
+reports the display, expression, error state, mode, base, width and angle unit. A label that the
+active page does not show, and a label that is an application action rather than a calculator key,
+are both rejected instead of silently doing nothing. The window gives every button its label as both
+its component name and its accessible name, and `UiDriver` marshals every action onto the event
+thread so a harness observes the repainted state without sleeping.

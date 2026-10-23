@@ -2,21 +2,18 @@ package dev.jcalculator.app;
 
 import dev.jcalculator.convert.UnitCategory;
 import dev.jcalculator.convert.UnitConverter;
-import dev.jcalculator.core.AngleType;
-import dev.jcalculator.core.Rational;
 import dev.jcalculator.date.DateCalculationEngine;
 import dev.jcalculator.date.DateDifference;
 import dev.jcalculator.date.DateUnit;
 import dev.jcalculator.engine.CalculatorMode;
 import dev.jcalculator.engine.Command;
 import dev.jcalculator.engine.HistoryEntry;
-import dev.jcalculator.engine.NumberWidth;
+import dev.jcalculator.harness.Tokens;
 import dev.jcalculator.manager.CalculatorManager;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -241,7 +238,7 @@ public final class CalculatorCli {
             }
         }
 
-        final Command command = commandFor(normalized);
+        final Command command = Tokens.commandFor(normalized);
         if (command == null) {
             System.err.println("unknown token: " + token);
             return false;
@@ -255,104 +252,6 @@ public final class CalculatorCli {
         if (manager.isError()) {
             System.out.println(manager.primaryDisplay());
         }
-    }
-
-    private static Command commandFor(String token) {
-        if (token.length() == 1) {
-            final char c = token.charAt(0);
-            if (c >= '0' && c <= '9') {
-                return Command.valueOf(
-                        switch (c) {
-                            case '0' -> "ZERO";
-                            case '1' -> "ONE";
-                            case '2' -> "TWO";
-                            case '3' -> "THREE";
-                            case '4' -> "FOUR";
-                            case '5' -> "FIVE";
-                            case '6' -> "SIX";
-                            case '7' -> "SEVEN";
-                            case '8' -> "EIGHT";
-                            default -> "NINE";
-                        });
-            }
-            if (c >= 'a' && c <= 'f') {
-                return Command.valueOf(String.valueOf(Character.toUpperCase(c)));
-            }
-        }
-        return switch (token) {
-            case "+", "add" -> Command.ADD;
-            case "-", "sub", "subtract" -> Command.SUBTRACT;
-            case "*", "x", "×", "mul", "multiply" -> Command.MULTIPLY;
-            case "/", "÷", "div", "divide" -> Command.DIVIDE;
-            case "^", "pow", "power" -> Command.POWER;
-            case "yroot", "root" -> Command.ROOT;
-            case "mod" -> Command.MOD;
-            case "and" -> Command.AND;
-            case "or" -> Command.OR;
-            case "xor" -> Command.XOR;
-            case "nand" -> Command.NAND;
-            case "nor" -> Command.NOR;
-            case "lsh", "<<" -> Command.LEFT_SHIFT;
-            case "rsh", ">>" -> Command.RIGHT_SHIFT;
-            case "=" , "equals", "equ" -> Command.EQUALS;
-            case "." -> Command.DECIMAL_POINT;
-            case "exp" -> Command.EXPONENT;
-            case "+/-", "negate", "sign" -> Command.NEGATE;
-            case "back", "backspace" -> Command.BACKSPACE;
-            case "clear", "c" -> Command.CLEAR;
-            case "ce" -> Command.CLEAR_ENTRY;
-            case "(" -> Command.OPEN_PAREN;
-            case ")" -> Command.CLOSE_PAREN;
-            case "sin" -> Command.SIN;
-            case "cos" -> Command.COS;
-            case "tan" -> Command.TAN;
-            case "asin" -> Command.ASIN;
-            case "acos" -> Command.ACOS;
-            case "atan" -> Command.ATAN;
-            case "sinh" -> Command.SINH;
-            case "cosh" -> Command.COSH;
-            case "tanh" -> Command.TANH;
-            case "sec" -> Command.SEC;
-            case "csc" -> Command.CSC;
-            case "cot" -> Command.COT;
-            case "sech" -> Command.SECH;
-            case "csch" -> Command.CSCH;
-            case "coth" -> Command.COTH;
-            case "asinh" -> Command.ASINH;
-            case "acosh" -> Command.ACOSH;
-            case "atanh" -> Command.ATANH;
-            case "ln" -> Command.LN;
-            case "log" -> Command.LOG;
-            case "sqrt", "√" -> Command.SQRT;
-            case "sqr" -> Command.SQR;
-            case "cube" -> Command.CUBE;
-            case "cbrt", "cuberoot" -> Command.CUBEROOT;
-            case "fact", "!" -> Command.FACTORIAL;
-            case "inv", "1/x" -> Command.RECIPROCAL;
-            case "percent", "%" -> Command.PERCENT;
-            case "int", "integer" -> Command.INTEGER_PART;
-            case "frac" -> Command.FRACTIONAL_PART;
-            case "abs" -> Command.ABS;
-            case "ceil" -> Command.CEIL;
-            case "floor" -> Command.FLOOR;
-            case "dms" -> Command.DMS;
-            case "degrees" -> Command.DEGREES;
-            case "10^" -> Command.POW10;
-            case "2^" -> Command.POW2;
-            case "pi", "π" -> Command.PI;
-            case "e" -> Command.EULER;
-            case "rand" -> Command.RANDOM;
-            case "ms" -> Command.MEMORY_STORE;
-            case "mr" -> Command.MEMORY_RECALL;
-            case "m+" -> Command.MEMORY_ADD;
-            case "m-" -> Command.MEMORY_SUBTRACT;
-            case "mc" -> Command.MEMORY_CLEAR;
-            case "inv-toggle" -> Command.INVERSE;
-            case "rol" -> Command.ROTATE_LEFT;
-            case "ror" -> Command.ROTATE_RIGHT;
-            case "not", "com" -> Command.COMPLEMENT;
-            default -> null;
-        };
     }
 
     // ---- Direct services ------------------------------------------------------------------------

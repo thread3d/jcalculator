@@ -1,0 +1,21 @@
+#!/bin/sh
+# Runs the jCalculator MCP server over stdin/stdout.
+#
+# Build the project first:  ./mvnw package
+#
+# Register it with an MCP-capable harness:
+#   { "mcpServers": { "jcalculator": { "command": "/absolute/path/to/bin/jcalculator-mcp" } } }
+#
+# The script uses the packaged jar when one exists and falls back to target/classes.
+set -eu
+
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+root=$(dirname "$here")
+jar=$(ls "$root"/target/jcalculator-*.jar 2>/dev/null | head -n 1 || true)
+if [ -n "${jar:-}" ]; then
+    classpath=$jar
+else
+    classpath=$root/target/classes
+fi
+
+exec java -cp "$classpath" dev.jcalculator.mcp.McpServer "$@"

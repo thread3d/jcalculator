@@ -1,0 +1,21 @@
+#!/bin/sh
+# Runs the headless jCalculator harness CLI.
+#
+# Build the project first:  ./mvnw package
+# Examples:
+#   bin/jcalculator-harness 2 + 3 "*" 4 =
+#   printf '2 + 3 =\n' | bin/jcalculator-harness --batch
+#
+# The script uses the packaged jar when one exists and falls back to target/classes.
+set -eu
+
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+root=$(dirname "$here")
+jar=$(ls "$root"/target/jcalculator-*.jar 2>/dev/null | head -n 1 || true)
+if [ -n "${jar:-}" ]; then
+    classpath=$jar
+else
+    classpath=$root/target/classes
+fi
+
+exec java -cp "$classpath" dev.jcalculator.harness.HarnessCli "$@"

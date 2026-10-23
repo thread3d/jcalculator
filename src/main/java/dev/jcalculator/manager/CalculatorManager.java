@@ -10,6 +10,8 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Random;
 
 /**
  * Application-level calculator state: the current mode, the history list of each mode and the
@@ -40,8 +42,23 @@ public final class CalculatorManager implements CalcEngine.EngineListener {
     }
 
     public CalculatorManager(CalculatorMode mode) {
+        this(mode, new Random());
+    }
+
+    /**
+     * Creates a manager whose random key draws from a seeded source, so a harness can reproduce a
+     * sequence of {@code RANDOM} values across runs.
+     *
+     * @param mode       the calculator page to start on
+     * @param randomSeed the seed for the random key
+     */
+    public CalculatorManager(CalculatorMode mode, long randomSeed) {
+        this(mode, new Random(randomSeed));
+    }
+
+    public CalculatorManager(CalculatorMode mode, Random random) {
         this.mode = mode;
-        this.engine = new CalcEngine(mode, this);
+        this.engine = new CalcEngine(mode, this, Objects.requireNonNull(random, "random"));
         for (CalculatorMode value : CalculatorMode.values()) {
             histories.put(value, new ArrayList<>());
         }

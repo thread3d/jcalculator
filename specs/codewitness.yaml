@@ -21,7 +21,7 @@ verification:
   timeout: 10m
   max_duration: 30m
   max_test_generation_iterations: 2
-  max_generated_tests: 60
+  max_generated_tests: 80
 
 tests:
   enabled: true
@@ -726,3 +726,102 @@ scenarios:
         description: abandon the 5 and continue with 2
     observation: "cli.manager().primaryDisplay()"
     invariant: "\"14\".equals(observation)"
+
+  # R-023 -- the harness session is silent, deterministic and explicit about failure.
+  - id: SC-HARNESS-SEEDED
+    requirement: R-023
+    description: Two sessions with the same seed draw the same random value
+    mode: single
+    setup: "dev.jcalculator.harness.CalculatorSession first = new dev.jcalculator.harness.CalculatorSession(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC, 7L); dev.jcalculator.harness.CalculatorSession second = new dev.jcalculator.harness.CalculatorSession(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC, 7L);"
+    steps:
+      - call: "first.press(\"rand\"); second.press(\"rand\");"
+        description: draw one random value from each seeded session
+    observation: "String.valueOf(first.state().display().equals(second.state().display()))"
+    invariant: "\"true\".equals(observation)"
+
+  - id: SC-HARNESS-REFUSES-UNKNOWN
+    requirement: R-023
+    description: An unknown token is refused and named rather than ignored
+    mode: single
+    setup: "dev.jcalculator.harness.CalculatorSession session = new dev.jcalculator.harness.CalculatorSession(); String refused = \"none\";"
+    steps:
+      - call: "try { session.press(\"bogus\"); } catch (dev.jcalculator.harness.UnknownTokenException expected) { refused = expected.token(); }"
+        description: press a token that is not a button
+    observation: "refused"
+    invariant: "\"bogus\".equals(observation)"
+
+  # R-024 -- one request, one machine-readable response.
+  - id: SC-HARNESS-PROTOCOL
+    requirement: R-024
+    description: A bare token line becomes a JSON response with the display and success
+    mode: single
+    setup: "dev.jcalculator.harness.HarnessProtocol protocol = new dev.jcalculator.harness.HarnessProtocol(new dev.jcalculator.harness.CalculatorSession()); dev.jcalculator.harness.HarnessProtocol.Outcome outcome = null;"
+    steps:
+      - call: "outcome = protocol.handleLine(\"2 + 3 =\");"
+        description: handle one bare token line
+    observation: "String.valueOf(outcome.response().get(\"display\")) + \"|\" + String.valueOf(outcome.response().get(\"ok\")) + \"|\" + outcome.exitCode()"
+    invariant: "\"5|true|0\".equals(observation)"
+
+  - id: SC-HARNESS-ERROR-CODE
+    requirement: R-024
+    description: A calculation error reports ok false, a stable code and exit code 1
+    mode: single
+    setup: "dev.jcalculator.harness.HarnessProtocol protocol = new dev.jcalculator.harness.HarnessProtocol(new dev.jcalculator.harness.CalculatorSession()); dev.jcalculator.harness.HarnessProtocol.Outcome outcome = null;"
+    steps:
+      - call: "outcome = protocol.handleLine(\"1 / 0 =\");"
+        description: handle a division by zero
+    observation: "String.valueOf(outcome.response().get(\"ok\")) + \"|\" + String.valueOf(outcome.response().get(\"errorCode\")) + \"|\" + outcome.exitCode()"
+    invariant: "\"false|calculator_error|1\".equals(observation)"
+
+  # R-025 -- the MCP server over stdio.
+  - id: SC-HARNESS-MCP-TOOLS
+    requirement: R-025
+    description: The MCP server lists the calculator tools
+    mode: single
+    setup: "dev.jcalculator.mcp.McpServer server = new dev.jcalculator.mcp.McpServer(new dev.jcalculator.harness.CalculatorSession(), new java.io.PrintWriter(java.io.Writer.nullWriter())); String response = null;"
+    steps:
+      - call: "response = server.handle(dev.jcalculator.harness.Json.write(dev.jcalculator.harness.Json.object(\"jsonrpc\", \"2.0\", \"id\", 1, \"method\", \"tools/list\")));"
+        description: ask the server for its tool list
+    observation: "String.valueOf(response.contains(\"calculator_press\"))"
+    invariant: "\"true\".equals(observation)"
+
+  - id: SC-HARNESS-MCP-CALL
+    requirement: R-025
+    description: The MCP press tool evaluates a token sequence
+    mode: single
+    setup: "dev.jcalculator.mcp.McpServer server = new dev.jcalculator.mcp.McpServer(new dev.jcalculator.harness.CalculatorSession(), new java.io.PrintWriter(java.io.Writer.nullWriter())); String response = null; String body = null;"
+    steps:
+      - call: "response = server.handle(dev.jcalculator.harness.Json.write(dev.jcalculator.harness.Json.object(\"jsonrpc\", \"2.0\", \"id\", 1, \"method\", \"tools/call\", \"params\", dev.jcalculator.harness.Json.object(\"name\", \"calculator_press\", \"arguments\", dev.jcalculator.harness.Json.object(\"tokens\", java.util.List.of(\"2\", \"+\", \"3\", \"=\")))))); body = (String) dev.jcalculator.harness.Json.asObject(dev.jcalculator.harness.Json.asArray(dev.jcalculator.harness.Json.asObject(dev.jcalculator.harness.Json.parseObject(response).get(\"result\")).get(\"content\")).get(0)).get(\"text\");"
+        description: call the press tool and read the JSON body it returned
+    observation: "String.valueOf(dev.jcalculator.harness.Json.parseObject(body).get(\"display\"))"
+    invariant: "\"5\".equals(observation)"
+
+  # R-026 -- the window is drivable without a screen.
+  - id: SC-WINDOW-AUTOMATION
+    requirement: R-026
+    description: The window controller clicks labelled keys and evaluates
+    mode: single
+    setup: "dev.jcalculator.app.AutomationSurface surface = new dev.jcalculator.app.AutomationSurface(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "surface.click(\"2\"); surface.click(\"+\"); surface.click(\"3\"); surface.click(\"×\"); surface.click(\"4\"); surface.click(\"=\");"
+        description: click the labelled keys of the standard page
+    observation: "surface.snapshot().display()"
+    invariant: "\"20\".equals(observation)"
+
+  - id: SC-WINDOW-PAGE-LAYOUT
+    requirement: R-026
+    description: The scientific page exposes sin and hides the programmer keys
+    mode: single
+    setup: "dev.jcalculator.app.AutomationSurface surface = new dev.jcalculator.app.AutomationSurface(dev.jcalculator.engine.CalculatorMode.STANDARD);"
+    steps:
+      - call: "surface.setMode(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+        description: switch the surface to the scientific page
+    observation: "String.valueOf(surface.keypadKeys().stream().anyMatch(key -> \"sin\".equals(key.label())) && surface.keypadKeys().stream().noneMatch(key -> \"AND\".equals(key.label())))"
+    invariant: "\"true\".equals(observation)"
+
+    requirement: R-026
+    description: The scientific page exposes sin and hides the programmer keys
+    mode: single
+    setup: "dev.jcalculator.app.AutomationSurface surface = new dev.jcalculator.app.AutomationSurface(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC);"
+    observation: "String.valueOf(surface.keypadKeys().stream().anyMatch(key -> \"sin\".equals(key.label())) && surface.keypadKeys().stream().noneMatch(key -> \"AND\".equals(key.label())))"
+    invariant: "\"true\".equals(observation)"
