@@ -4,6 +4,33 @@ All notable changes to jCalculator are recorded here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] - 2026-10-24
+
+A patch: a display defect and a loss of working precision are fixed, and no interface changed. What the
+display *shows* did change for values the earlier release rounded differently, so anything comparing
+displayed strings should note the new rules.
+
+This closes the last three values the parity oracle disagreed on. Measured against the original's own
+RatPack, compiled from the sources in `calculator-main`: the display now agrees on **660 of 660**
+values at both precision 16 and precision 32, where 2.3.0 agreed on 658 and 659.
+
+### Fixed
+
+- A computed value is kept at the display precision plus `GUARD_DIGITS` rather than being rounded
+  down to the display precision. The original does the same — its `sin(30°)` is
+  `0.49999999999999999999967…`, twenty-one correct digits at precision sixteen — and that is why a
+  chain such as `ln(exp(1))` reads `1` on both sides instead of `0.9999999999999999` (`R-020`).
+- The display rounds a value once. It had rounded to two spare digits and then rounded that result
+  again, which carried twice on a tail like `…849` and showed a last digit one too high; the spare
+  digits are now truncated, as the original's `stripzeroesnum` truncates them (`R-020`).
+
+### Tests
+
+- A `NumberFormatterTest` case pins the single rounding with the `…849` and `…86` tails,
+  `RationalMathTest` pins the working digits and the `ln(exp(1))` round trip, and the two exactness
+  assertions on `sin(30°)` and `cos(180°)` became display assertions — those values are not exact on
+  the original either.
+
 ## [2.3.0] - 2026-10-24
 
 A minor bump: no caller signature and no protocol field changed, but what the display *shows* did,
@@ -24,21 +51,12 @@ from the sources in `calculator-main` and comparing 660 displayed values at each
 - `ln` and `log10` snap a result below the working precision of its input to zero, as the original's
   `lograt` does, so a logarithm of a value a hair away from one reads `0` rather than an artefact of
   the last guard digit (`R-020`).
-- A computed value is kept at the display precision plus `GUARD_DIGITS` rather than being rounded
-  down to the display precision. The original does the same — its `sin(30°)` is
-  `0.49999999999999999999967…`, twenty-one correct digits at precision sixteen — and that is why a
-  chain such as `ln(exp(1))` reads `1` on both sides instead of `0.9999999999999999` (`R-020`).
-- The display rounds a value once. It used to round to two spare digits and then round again, which
-  carried twice on a tail like `…849` and showed a last digit one too high; the spare digits are now
-  truncated, as the original's `stripzeroesnum` truncates them (`R-020`).
-
 ### Tests
 
 - Five `NumberFormatterTest` cases pin the field rules, and two scenarios carry them.
 
-Measured against the compiled original: the display now agrees on **660 of 660** values at both
-precision 16 and precision 32 — every displayed string identical, from 590 and 596 before the field
-rules and the working digits were brought in line.
+Measured against the compiled original: the display agreed on **658 of 660** values at precision 16
+and 659 of 660 at 32, from 590 and 596 before the field rules — the remainder fixed in 2.3.1.
 
 ## [2.2.0] - 2026-10-24
 
