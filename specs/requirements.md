@@ -190,10 +190,24 @@ source value multiplied by the target rate divided by the source rate.
 
 # R-020 The display formats numbers predictably
 
-Decimal output is grouped in threes with commas and rounds to the mode's precision. Values are
-trimmed of trailing zeros: 1.5 is shown as `1.5`, never `1.500000`. Hexadecimal and binary output is
-grouped in fours and octal in threes. Error messages are shown instead of numbers while the
-calculator is in its error state.
+The display has room for the mode's precision — sixteen digits on the standard page, thirty-two on the
+scientific one — and spends them the way the original does:
+
+- a value with more digits to the left of the decimal point than the display has room for switches to
+  exponent form, so `20!` reads `2.43290200817664e+18` at precision sixteen;
+- a value below one spends part of the field on its leading zeros, so `sin(1°)` shows fifteen
+  significant digits at precision sixteen rather than sixteen (`0.0174524064372835`), and switches to
+  exponent form only when the zeros and the digits together would not fit (`1.428571428571429e-7`);
+- a value that needs less precision keeps fixed notation however small it is, so `1/10000` reads
+  `0.0001`.
+
+Digits are rounded half up and trailing zeros are trimmed, so `1.5` is shown as `1.5`, never
+`1.500000`. Decimal output is grouped in threes with commas; hexadecimal and binary in fours and octal
+in threes. The forced scientific format always uses an exponent. Error messages are shown instead of
+numbers while the calculator is in its error state.
+
+A logarithm whose result is below the working precision of its input snaps to zero, as the original's
+logarithm does: `ln` of a value a hair away from one reads `0` rather than a rounding artefact.
 
 # R-021 An error freezes input until it is cleared
 

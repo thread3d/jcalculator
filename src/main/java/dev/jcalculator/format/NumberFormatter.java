@@ -15,6 +15,9 @@ import java.math.RoundingMode;
  */
 public final class NumberFormatter {
 
+    /** How many zeros after the decimal point the original will spend before switching to exponent form. */
+    private static final int MAX_ZEROS_AFTER_DECIMAL = 2;
+
     public static final char DECIMAL_SEPARATOR = '.';
     public static final char GROUP_SEPARATOR = ',';
 
@@ -22,29 +25,94 @@ public final class NumberFormatter {
     }
 
     /**
-     * Formats a value for the primary display.
+     * Formats a value for the primary display, the way the original's {@code NumberToString} does.
+     *
+     * <p>{@code precision} is the number of digits the display has room for, and the original spends
+     * them in a specific order:
+     *
+     * <ul>
+     *   <li>more than {@code precision} digits to the left of the decimal point cannot be shown, so
+     *       the value switches to scientific notation;</li>
+     *   <li>a value below one spends some of those digits on the leading zeros, which is why
+     *       {@code sin(1°)} shows fifteen digits at precision sixteen and not sixteen;</li>
+     *   <li>once more than {@link #MAX_ZEROS_AFTER_DECIMAL} zeros would be needed, the value again
+     *       switches to scientific notation, so {@code 0.0001} reads {@code 1e-4} rather than
+     *       {@code 0.0001}.</li>
+     * </ul>
+     *
+     * <p>The remaining digits are rounded half up, and trailing zeros are dropped.
      *
      * @param value      the value to render
-     * @param precision  significant digits to round to
-     * @param scientific whether the user toggled scientific (FE) notation
+     * @param precision  the digits the display has room for
+     * @param scientific whether the user forced scientific (FE) notation
      */
     public static String format(Rational value, int precision, boolean scientific) {
         if (value.isZero()) {
             return "0";
         }
-        if (scientific) {
-            return formatScientific(value, precision);
+        final int room = Math.max(1, precision);
+        // The working value carries two guard digits, as the original's strip-to-precision does.
+        final BigDecimal working = value
+                .toBigDecimal(new MathContext(room + 2, RoundingMode.HALF_UP))
+                .stripTrailingZeros();
+        final int exponent = working.precision() - working.scale();
+        final int significant = Math.min(working.precision(), room);
+        final boolean useScientific = scientific
+                || exponent > room
+                || (significant - exponent > room && exponent < -MAX_ZEROS_AFTER_DECIMAL);
+        final int digits;
+        if (useScientific) {
+            digits = room;
+        } else if (significant - exponent > room) {
+            // The leading zeros are part of the field, so they cost displayed digits.
+            digits = Math.max(1, room + exponent);
+        } else {
+            digits = room;
         }
-        return value.toDecimalString(precision);
+        final BigDecimal rounded = roundSignificant(working, digits);
+        return useScientific ? scientific(rounded) : plain(rounded);
     }
 
+    /** Renders a value in scientific notation with at most {@code precision} significant digits. */
     public static String formatScientific(Rational value, int precision) {
-        final MathContext context = new MathContext(precision, RoundingMode.HALF_UP);
-        final BigDecimal rounded = value.toBigDecimal(context).stripTrailingZeros();
-        final int exponent = rounded.precision() - rounded.scale() - 1;
-        final BigDecimal mantissa = rounded.movePointLeft(exponent).stripTrailingZeros();
+        if (value.isZero()) {
+            return "0";
+        }
+        final int room = Math.max(1, precision);
+        final BigDecimal working = value
+                .toBigDecimal(new MathContext(room + 2, RoundingMode.HALF_UP))
+                .stripTrailingZeros();
+        return scientific(roundSignificant(working, room));
+    }
+
+    private static BigDecimal roundSignificant(BigDecimal value, int digits) {
+        return value.round(new MathContext(Math.max(1, digits), RoundingMode.HALF_UP))
+                .stripTrailingZeros();
+    }
+
+    private static String plain(BigDecimal value) {
+        return trimDecimal(value.toPlainString());
+    }
+
+    private static String scientific(BigDecimal value) {
+        final int exponent = value.precision() - value.scale() - 1;
+        final BigDecimal mantissa = value.movePointLeft(exponent).stripTrailingZeros();
         final String sign = exponent >= 0 ? "+" : "";
-        return mantissa.toPlainString() + "e" + sign + exponent;
+        return trimDecimal(mantissa.toPlainString()) + "e" + sign + exponent;
+    }
+
+    private static String trimDecimal(String text) {
+        if (text.indexOf('.') < 0) {
+            return text;
+        }
+        String trimmed = text;
+        while (trimmed.endsWith("0")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        if (trimmed.endsWith(".")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        return trimmed.equals("-0") ? "0" : trimmed;
     }
 
     /** Groups the integer part of a formatted number according to the radix. */

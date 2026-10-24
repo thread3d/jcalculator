@@ -7,6 +7,7 @@ import dev.jcalculator.diagnostics.IssueSurface;
 import dev.jcalculator.engine.CalculatorMode;
 import dev.jcalculator.engine.Command;
 import dev.jcalculator.engine.HistoryEntry;
+import dev.jcalculator.format.NumberFormatter;
 
 import javax.swing.AbstractAction;
 import javax.swing.DefaultListModel;
@@ -484,7 +485,7 @@ public final class CalculatorWindow extends JFrame {
         final Runnable reload = () -> {
             model.clear();
             for (Rational value : surface.session().manager().memorizedNumbers()) {
-                model.addElement(value.toDecimalString(surface.mode().precision()));
+                model.addElement(NumberFormatter.format(value, surface.mode().precision(), false));
             }
         };
         reload.run();

@@ -4,6 +4,33 @@ All notable changes to jCalculator are recorded here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+The display now spends the mode's precision the way the original does, and the maths snap the way the
+original's logarithms do. Both were derived by compiling RatPack — the original's own algorithms —
+from the sources in `calculator-main` and comparing 660 displayed values at each precision.
+
+### Changed
+
+- `NumberFormatter` follows the original's `NumberToString` field rules: a value with more whole
+  digits than the field holds switches to exponent form (`20!` reads `2.43290200817664e+18` at
+  precision 16); a value below one spends part of the field on its leading zeros (`sin(1°)` shows
+  fifteen significant digits, not sixteen); a value with few enough digits stays in fixed notation
+  however small (`1/10000` reads `0.0001`); digits are rounded half up and trailing zeros dropped
+  (`R-020`). The memory list, in the protocol and in the window, follows the same rule.
+- `ln` and `log10` snap a result below the working precision of its input to zero, as the original's
+  `lograt` does, so a logarithm of a value a hair away from one reads `0` rather than an artefact of
+  the last guard digit (`R-020`).
+
+### Tests
+
+- Five `NumberFormatterTest` cases pin the field rules, and two scenarios carry them.
+
+Measured against the compiled original: at precision 16 the display now agrees on **658 of 660**
+values (99.7%, from 590), and at precision 32 on **659 of 660** (99.8%, from 596). The remaining
+three differ by one unit in the last displayed digit, from the port's `exp`/`ln` round-trip carried
+at 16 digits rather than from the display rule.
+
 ## [2.2.0] - 2026-10-24
 
 A minor bump: the interfaces a caller uses — the JSON protocol, the MCP tools, the CLI exit codes

@@ -147,7 +147,8 @@ public final class RationalMath {
         if (value.signum() <= 0) {
             throw new ArithmeticException("logarithm of a non-positive number");
         }
-        return rational(ln(value.toBigDecimal(context(precision)), context(precision)), precision);
+        final MathContext context = context(precision);
+        return rational(snapToZero(ln(value.toBigDecimal(context), context), value, precision), precision);
     }
 
     public static Rational log10(Rational value, int precision) {
@@ -155,7 +156,9 @@ public final class RationalMath {
             throw new ArithmeticException("logarithm of a non-positive number");
         }
         final MathContext context = context(precision);
-        return rational(ln(value.toBigDecimal(context), context).divide(LN_10, context), precision);
+        final BigDecimal logged =
+                snapToZero(ln(value.toBigDecimal(context), context), value, precision);
+        return rational(logged.divide(LN_10, context), precision);
     }
 
     public static Rational sin(Rational value, AngleType angleType, int precision) {
@@ -482,6 +485,20 @@ public final class RationalMath {
     }
 
     /** Snaps a trigonometric residual to zero when it is below the displayed precision. */
+    /**
+     * Snaps a logarithm to zero when its result is below the working precision of its input.
+     *
+     * <p>The original's {@code lograt} ends with {@code _snaprat(px, a, nullptr, precision)}, whose
+     * threshold is {@code |a| * radix^-precision}: a logarithm of a value a hair away from one reads
+     * zero instead of a rounding artefact of the last guard digit.
+     */
+    private static BigDecimal snapToZero(BigDecimal result, Rational input, int precision) {
+        final MathContext context = context(precision);
+        final BigDecimal threshold = input.abs().toBigDecimal(context)
+                .multiply(BigDecimal.ONE.scaleByPowerOfTen(-precision), context);
+        return result.abs().compareTo(threshold) < 0 ? BigDecimal.ZERO : result;
+    }
+
     private static BigDecimal snapToZero(BigDecimal value, int precision) {
         final BigDecimal threshold = BigDecimal.ONE.scaleByPowerOfTen(-(precision + 2));
         return value.abs().compareTo(threshold) < 0 ? BigDecimal.ZERO : value;

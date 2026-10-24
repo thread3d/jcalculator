@@ -12,6 +12,7 @@ import dev.jcalculator.diagnostics.IssueKind;
 import dev.jcalculator.diagnostics.IssueSeverity;
 import dev.jcalculator.diagnostics.IssueSurface;
 import dev.jcalculator.engine.CalculatorMode;
+import dev.jcalculator.format.NumberFormatter;
 
 import java.time.DateTimeException;
 import java.time.LocalDate;
@@ -495,7 +496,7 @@ public final class HarnessProtocol {
         final List<String> values = new ArrayList<>();
         final int precision = state.mode().precision();
         for (var value : state.memory()) {
-            values.add(value.toDecimalString(precision));
+            values.add(NumberFormatter.format(value, precision, false));
         }
         return values;
     }

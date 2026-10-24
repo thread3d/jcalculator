@@ -1096,3 +1096,26 @@ scenarios:
         description: sample one over x across zero
     observation: "plot.samples().size()"
     invariant: "2 == observation"
+
+  # R-020 -- the display spends the original's field the way the original does.
+  - id: SC-DISPLAY-SPENDS-LEADING-ZEROS
+    requirement: R-020
+    description: A value below one spends display digits on its leading zero
+    mode: single
+    setup: "dev.jcalculator.core.Rational value = dev.jcalculator.core.RationalMath.sin(dev.jcalculator.core.Rational.one(), dev.jcalculator.core.AngleType.DEGREES, 16);"
+    steps:
+      - call: "value = value;"
+        description: take one sine of one degree
+    observation: "dev.jcalculator.format.NumberFormatter.format(value, 16, false)"
+    invariant: "\"0.0174524064372835\".equals(observation)"
+
+  - id: SC-DISPLAY-SWITCHES-TO-EXPONENT
+    requirement: R-020
+    description: A value with more whole digits than the field has room for uses an exponent
+    mode: single
+    setup: "String factorial = dev.jcalculator.format.NumberFormatter.format(dev.jcalculator.core.Rational.of(2432902008176640000L), 16, false); String tiny = dev.jcalculator.format.NumberFormatter.format(dev.jcalculator.core.Rational.of(1, 7000000), 16, false);"
+    steps:
+      - call: "factorial = factorial + \"|\" + tiny;"
+        description: format a nineteen-digit value and a seven-place fraction
+    observation: "factorial"
+    invariant: "\"2.43290200817664e+18|1.428571428571429e-7\".equals(observation)"

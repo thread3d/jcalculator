@@ -83,19 +83,19 @@ removed from the project afterwards and kept in the run directory.
 
 ## Latest result
 
-Run `CW-2026-10-24-Y9RK1` (copy mode, not in place):
+Run `CW-2026-10-24-0MK9J` (copy mode, not in place):
 
 | Measure | Result |
 | --- | --- |
 | Overall | `VERIFIED` |
 | Requirements | 38 `VERIFIED`, 0 `PARTIALLY_VERIFIED`, 0 `FAILED`, 0 `UNVERIFIED`, 0 `BLOCKED` |
-| Existing tests | 385 executed, 385 passed |
-| Scenario tests | 88 generated from `codewitness.yaml`, all passed |
+| Existing tests | 390 executed, 390 passed |
+| Scenario tests | 90 generated from `codewitness.yaml`, all passed |
 | Counterexamples | none |
 | Static analysis | 0 compiler findings; 14 medium heuristic findings |
-| Coverage | 85.2% line, 73.1% branch |
+| Coverage | 85.1% line, 73.2% branch |
 
-The JSON and HTML reports are in `.codewitness/runs/CW-2026-10-24-Y9RK1/report.json` and
+The JSON and HTML reports are in `.codewitness/runs/CW-2026-10-24-0MK9J/report.json` and
 `report.html`. The run directory is git-ignored because it is generated evidence, not source.
 
 ## Traceability
