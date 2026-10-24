@@ -4,7 +4,10 @@ All notable changes to jCalculator are recorded here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.3.0] - 2026-10-24
+
+A minor bump: no caller signature and no protocol field changed, but what the display *shows* did,
+so anything comparing displayed strings to an earlier version should note the new rules.
 
 The display now spends the mode's precision the way the original does, and the maths snap the way the
 original's logarithms do. Both were derived by compiling RatPack — the original's own algorithms —
