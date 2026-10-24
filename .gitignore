@@ -6,3 +6,8 @@ target/
 *.iml
 .DS_Store
 .jcalculator/
+
+# A local parity oracle: compiles the original's RatPack (from the calculator-main checkout beside
+# this repository) and compares its display against the port's. It needs a C++ toolchain and a
+# checkout this repository does not contain, so it is kept out of the build and out of the history.
+/tools/ratpack-oracle/
