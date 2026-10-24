@@ -58,9 +58,10 @@ codes), R-032 (the expression line as a token stream) and R-033 (per-slot memory
 
 ### Tests
 
-- `EngineProtocolTest` (10 tests), 4 new `CalculatorManagerTest` cases and 3 new
-  `HarnessProtocolTest` cases: **210 tests** in 20 classes, all passing. jcheck `strict` reports
-  0 errors and 0 warnings.
+- `EngineProtocolTest` (10 tests), 5 new `CalculatorManagerTest` cases, 3 new
+  `HarnessProtocolTest` cases and a `ProgrammerCalculatorTest` regression case: **212 tests** in 20
+  classes, all passing. jcheck `strict` reports 0 errors and 0 warnings, and CodeWitness verifies
+  33/33 requirements from 80 scenarios with no counterexamples.
 
 ## [1.3.0] - 2026-10-23
 
