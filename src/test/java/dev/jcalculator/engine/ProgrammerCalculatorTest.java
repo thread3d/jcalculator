@@ -159,6 +159,17 @@ class ProgrammerCalculatorTest {
     }
 
     @Test
+    void anEvenRootOfANegativeIsAnErrorNotACrash() {
+        final CalculatorManager calculator = calculator();
+        typeDecimal(calculator, "8");
+        press(calculator, Command.NEGATE, Command.ROOT, Command.TWO, Command.EQUALS);
+
+        assertTrue(calculator.isError());
+        assertEquals("Invalid input", calculator.errorMessage());
+        assertEquals(EngineError.DOMAIN, calculator.engine().error());
+    }
+
+    @Test
     void scientificFunctionsAreUnavailableInIntegerMode() {
         final CalculatorManager calculator = calculator();
         press(calculator, Command.NINE);

@@ -126,6 +126,8 @@ public final class CalculatorSession {
                 manager.expression(),
                 manager.isError(),
                 manager.errorMessage(),
+                manager.parenthesisCount(),
+                manager.lastSignal(),
                 manager.engine().radix(),
                 manager.engine().width(),
                 manager.engine().angleType(),

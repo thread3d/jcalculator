@@ -4,8 +4,8 @@ A Java implementation of the Windows Calculator application: the standard, scien
 programmer calculators, date calculation, unit conversion and currency conversion, with memory and
 history, exact rational arithmetic, a Swing desktop window and a text interface.
 
-**Version 1.3.0** — the verified calculator, with the problems its own journal recorded now fixed;
-see `CHANGELOG.md`.
+**Version 2.0.0** — the verified calculator, with its engine internals restructured to mirror the
+original's own decomposition; see `CHANGELOG.md`.
 
 The original application in `../calculator-main` is a C#/C++ Universal Windows Platform app. Its
 model is split across three layers: `CalcManager` (history, memory, engines), `CalcEngine` (the
@@ -15,13 +15,27 @@ keeps that structure in Java:
 | Original | Java |
 | --- | --- |
 | `CalcManager/Ratpack/*` | `dev.jcalculator.core.Rational`, `RationalMath` |
-| `CalcManager/CEngine/*` | `dev.jcalculator.engine.CalcEngine`, `CalcInput`, `Command`, `ExpressionBuilder` |
+| `CalcManager/Ratpack/CalcErr.h` | `dev.jcalculator.engine.EngineError` |
+| `CalcManager/CEngine/calc.cpp`, `scicomm.cpp` | `dev.jcalculator.engine.CalcEngine` |
+| `CalcManager/CEngine/scioper.cpp` | `dev.jcalculator.engine.OperatorPrecedence` |
+| `CalcManager/CEngine/scifunc.cpp` | `dev.jcalculator.engine.UnaryFunctions` |
+| `CalcManager/CEngine/scidisp.cpp` | `dev.jcalculator.engine.DisplayFormatter`, `format.NumberFormatter` |
+| `CalcManager/CEngine/basex.cpp`, `logic.cpp` (bit helpers) | `dev.jcalculator.engine.BitMath` |
+| `CalcManager/CEngine/CalcInput.cpp` | `dev.jcalculator.engine.CalcInput` |
+| `CalcManager/CEngine/History.cpp`, `ExpressionCommand.cpp` | `ExpressionBuilder`, `ExpressionToken` |
+| `CalcManager/Header Files/ICalcDisplay.h` | `CalcEngine.EngineListener` |
 | `CalcManager/CalculatorManager.cpp` | `dev.jcalculator.manager.CalculatorManager` |
 | `CalcManager/UnitConverter.cpp` + `UnitConverterDataLoader.cs` | `dev.jcalculator.convert.UnitConverter` |
 | `CalcManager/NumberFormattingUtils.cpp` | `dev.jcalculator.format.NumberFormatter` |
 | `Calculator.ViewModels/Common/DateCalculator.cs` | `dev.jcalculator.date.DateCalculationEngine` |
 | `Calculator.ViewModels/StandardCalculatorViewModel.cs` | `CalculatorManager` + `CalculatorWindow` |
 | `Calculator/Views/*.xaml` | `dev.jcalculator.app.CalculatorWindow` (Swing) |
+
+The engine reports through the original's display interface rather than touching a view: the primary
+display, the expression as tokens that each keep their command, the parenthesis depth, and the
+non-error signals a presentation layer may act on (a refused digit, a right parenthesis with nothing
+to close, a binary operator arriving). Failures carry a named code as well as the text the display
+shows, so nothing has to match on display text.
 
 The XAML view cannot exist in Java, so the window is a Swing front end over the same manager the
 text interface and the tests use. Everything a calculation depends on — arithmetic, operator
@@ -35,14 +49,15 @@ local repository in `.m2repo/`, so it works offline and inside a sandbox.
 
 ```bash
 ./mvnw test                 # compile and run the test suite
-./mvnw package              # build target/jcalculator-1.3.0.jar
+./mvnw package              # build target/jcalculator-2.0.0.jar
 
 java -cp target/classes dev.jcalculator.app.CalculatorWindow     # desktop window
 java -cp target/classes dev.jcalculator.app.CalculatorCli        # interactive text mode
 java -cp target/classes dev.jcalculator.harness.HarnessCli 2 + 3 # machine-readable one-shot
 java -cp target/classes dev.jcalculator.mcp.McpServer            # MCP server on stdio
 java -cp target/classes dev.jcalculator.app.CalculatorCli --version
-java -jar target/jcalculator-1.3.0.jar --version
+java -jar target/jcalculator-2.0.0.jar --version
+bin/jcalculator                                  # the desktop window via its launcher
 bin/jcalculator-harness 2 + 3 =                  # the same harness CLI via its launcher
 bin/jcalculator-cli 2 + 3 =                      # the text interface via its launcher
 bin/jcalculator-mcp                              # the MCP server via its launcher
@@ -108,8 +123,9 @@ real:
 ```bash
 $ java -cp target/classes dev.jcalculator.harness.HarnessCli 2 + 3 "*" 4 =
 {"id":null,"op":"press","ok":true,"errorCode":null,"error":false,"errorMessage":null,
- "display":"20","rawDisplay":"20","expression":"5 × 4=","mode":"STANDARD","radix":10,
- "width":"QWORD","angle":"DEGREES","result":null,"history":[...],"memory":[]}
+ "display":"20","rawDisplay":"20","expression":"5 × 4=","parenthesis":0,"signal":null,
+ "mode":"STANDARD","radix":10,"width":"QWORD","angle":"DEGREES","result":null,
+ "history":[...],"memory":[]}
 ```
 
 With `--batch`, each input line is either a bare token sequence or a JSON request, and each line
@@ -133,6 +149,7 @@ Requests (`op`):
 | `date_diff` | `from`, `to` (ISO dates) | `result` |
 | `date_add`, `date_subtract` | `from`, `years`, `months`, `days` (whole numbers), `subtract` | `result` |
 | `history`, `memory` | — | the list |
+| `memory_edit` | `action` (`add`, `subtract`, `load`, `clear`), `index` (default 0) | the list |
 | `capabilities` | — | version, seed, modes, categories, operations, tokens, journal |
 | `report_issue` | `summary`, `detail`, `severity` | the recorded issue |
 | `issues` | `status` (`open`, `resolved`, `all`), `limit` | the page and its counts |
@@ -141,7 +158,9 @@ Requests (`op`):
 Every response has the same shape. `ok` says whether the operation produced a defined result,
 `error` says whether the calculator is in its error state, and `errorCode` is a stable reason when
 `ok` is false: `calculator_error`, `out_of_range`, `unknown_token`, `unknown_op`, `bad_request`,
-`parse_error`.
+`parse_error`. `parenthesis` is how many brackets the expression still has open, and `signal` is the
+last non-error signal the engine raised (`no_right_paren`, `binary_operator`, `max_digits`,
+`input_changed`, `memory_changed`) or `null`.
 
 A field of the wrong type is a `bad_request` that says what the field expects, never an
 `internal_error`: `tokens` must be an array of button names (a whitespace-separated string goes in
@@ -169,9 +188,10 @@ transport specifies. Register it with a harness like any other stdio server:
 `--seed` and `--mode`; build once with `./mvnw package` first.
 
 It implements `initialize`, `ping`, `tools/list` and `tools/call`, and advertises the `tools`
-capability. The fourteen tools are `calculator_press`, `calculator_evaluate`, `calculator_state`,
+capability. The fifteen tools are `calculator_press`, `calculator_evaluate`, `calculator_state`,
 `calculator_reset`, `calculator_mode`, `calculator_convert`, `calculator_date_diff`,
-`calculator_date_add`, `calculator_history`, `calculator_memory`, `calculator_capabilities`,
+`calculator_date_add`, `calculator_history`, `calculator_memory`, `calculator_memory_edit`,
+`calculator_capabilities`,
 `calculator_report_issue`, `calculator_issues` and `calculator_resolve_issue`.
 State persists between calls, and `--seed N` / `--mode MODE` set the initial session. The
 `initialize` instructions mention how many issues the journal currently holds open.
@@ -253,7 +273,7 @@ Ask a session to "fix the open issues", or work through them directly:
 ## Versioning
 
 jCalculator follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The current version
-is **1.3.0**; the release history is in `CHANGELOG.md`. A version change updates three places,
+is **2.0.0**; the release history is in `CHANGELOG.md`. A version change updates three places,
 which the build keeps in step:
 
 - `pom.xml` — the Maven project version, and therefore the jar name and manifest

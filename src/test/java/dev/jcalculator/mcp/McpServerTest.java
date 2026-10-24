@@ -62,7 +62,10 @@ class McpServerTest {
         assertTrue(tools.stream()
                 .map(Json::asObject)
                 .anyMatch(tool -> "calculator_report_issue".equals(tool.get("name"))));
-        assertEquals(14, tools.size());
+        assertTrue(tools.stream()
+                .map(Json::asObject)
+                .anyMatch(tool -> "calculator_memory_edit".equals(tool.get("name"))));
+        assertEquals(15, tools.size());
     }
 
     @Test

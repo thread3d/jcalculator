@@ -21,7 +21,7 @@ verification:
   timeout: 10m
   max_duration: 30m
   max_test_generation_iterations: 2
-  max_generated_tests: 96
+  max_generated_tests: 120
 
 tests:
   enabled: true
@@ -899,3 +899,107 @@ scenarios:
         description: send a token string where the field expects an array
     observation: "String.valueOf(outcome.response().get(\"errorCode\")) + \"|\" + ((String) outcome.response().get(\"message\")).contains(\"array\")"
     invariant: "\"bad_request|true\".equals(observation)"
+
+  # R-030 -- the engine reports through the original's display protocol: the expression as tokens,
+  # the parenthesis depth, and the non-error signals.
+  - id: SC-ENGINE-EXPRESSION-TOKENS
+    requirement: R-030
+    description: The expression reaches the display as tokens that keep their command
+    mode: single
+    setup: "dev.jcalculator.harness.CalculatorSession session = new dev.jcalculator.harness.CalculatorSession(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC, 0L);"
+    steps:
+      - call: "session.pressExpression(\"2 + 3 =\");"
+        description: complete a calculation
+    observation: "session.manager().engine().expressionTokens().size() + \"|\" + session.manager().engine().expressionTokens().get(1).command()"
+    invariant: "\"4|ADD\".equals(observation)"
+
+  - id: SC-ENGINE-PARENTHESIS-DEPTH
+    requirement: R-030
+    description: The reported parenthesis depth follows the expression
+    mode: single
+    setup: "dev.jcalculator.harness.CalculatorSession session = new dev.jcalculator.harness.CalculatorSession(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC, 0L);"
+    steps:
+      - call: "session.pressExpression(\"( 1 + 2\");"
+        description: open one parenthesis and leave it open
+    observation: "session.state().parenthesisCount()"
+    invariant: "1 == observation"
+
+  - id: SC-ENGINE-NO-RIGHT-PAREN-SIGNAL
+    requirement: R-030
+    description: A right parenthesis with nothing open raises a signal and is not an error
+    mode: single
+    setup: "dev.jcalculator.harness.CalculatorSession session = new dev.jcalculator.harness.CalculatorSession(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC, 0L);"
+    steps:
+      - call: "session.pressExpression(\"9 )\");"
+        description: close a parenthesis that was never opened
+    observation: "session.state().signal() + \"|\" + session.state().error()"
+    invariant: "\"no_right_paren|false\".equals(observation)"
+
+  # R-031 -- a failure carries a code as well as the text the display shows.
+  - id: SC-ENGINE-ERROR-CODE
+    requirement: R-031
+    description: A divide by zero reports its code and the original text
+    mode: single
+    setup: "dev.jcalculator.harness.CalculatorSession session = new dev.jcalculator.harness.CalculatorSession(dev.jcalculator.engine.CalculatorMode.STANDARD, 0L);"
+    steps:
+      - call: "session.pressExpression(\"1 / 0 =\");"
+        description: divide one by zero
+    observation: "session.state().errorMessage() + \"|\" + session.manager().engine().errorCode()"
+    invariant: "\"Cannot divide by zero|divide_by_zero\".equals(observation)"
+
+  - id: SC-ENGINE-ERROR-CODE-DOMAIN
+    requirement: R-031
+    description: An out-of-domain function reports the domain code
+    mode: single
+    setup: "dev.jcalculator.harness.CalculatorSession session = new dev.jcalculator.harness.CalculatorSession(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC, 0L);"
+    steps:
+      - call: "session.pressExpression(\"0 - 1 =\"); session.press(\"sqrt\");"
+        description: take the square root of minus one
+    observation: "session.manager().engine().errorCode() + \"|\" + session.state().errorMessage()"
+    invariant: "\"domain|Invalid input\".equals(observation)"
+
+  # R-032 -- the expression line is a token stream that keeps the completed equation.
+  - id: SC-ENGINE-COMPLETED-EQUATION
+    requirement: R-032
+    description: A completed equation stays on the expression line until the next key
+    mode: single
+    setup: "dev.jcalculator.harness.CalculatorSession session = new dev.jcalculator.harness.CalculatorSession(dev.jcalculator.engine.CalculatorMode.STANDARD, 0L);"
+    steps:
+      - call: "session.pressExpression(\"2 + 3 =\");"
+        description: complete a calculation
+    observation: "session.state().expression()"
+    invariant: "\"2 + 3=\".equals(observation)"
+
+  - id: SC-ENGINE-PRECEDENCE-INVERSION-LINE
+    requirement: R-032
+    description: Replacing an operator with a tighter one encloses what was already computed
+    mode: single
+    setup: "dev.jcalculator.harness.CalculatorSession session = new dev.jcalculator.harness.CalculatorSession(dev.jcalculator.engine.CalculatorMode.SCIENTIFIC, 0L);"
+    steps:
+      - call: "session.pressExpression(\"1 * 2 +\"); session.press(\"^\");"
+        description: press a tighter operator over the pending one
+    observation: "session.state().expression()"
+    invariant: "\"(1 × 2) ^\".equals(observation)"
+
+  # R-033 -- memory slots are edited individually.
+  - id: SC-MEMORY-SLOT-ADD
+    requirement: R-033
+    description: Adding to a slot changes only that slot
+    mode: single
+    setup: "dev.jcalculator.manager.CalculatorManager calculator = new dev.jcalculator.manager.CalculatorManager(dev.jcalculator.engine.CalculatorMode.STANDARD, 0L);"
+    steps:
+      - call: "calculator.sendCommand(dev.jcalculator.engine.Command.FIVE); calculator.sendCommand(dev.jcalculator.engine.Command.MEMORY_STORE); calculator.sendCommand(dev.jcalculator.engine.Command.CLEAR); calculator.sendCommand(dev.jcalculator.engine.Command.THREE); calculator.memorizedNumberAdd(0);"
+        description: store five, clear, type three, add it to the slot
+    observation: "calculator.lastSignal() + \"|\" + calculator.memorizedNumbers().size() + \"|\" + calculator.memorizedNumbers().get(0).toDecimalString(16)"
+    invariant: "\"memory_changed|1|8\".equals(observation)"
+
+  - id: SC-MEMORY-SLOT-MISSING-REFUSED
+    requirement: R-033
+    description: A memory slot that does not exist is a refusal, not an internal failure
+    mode: single
+    setup: "dev.jcalculator.harness.HarnessProtocol protocol = new dev.jcalculator.harness.HarnessProtocol(new dev.jcalculator.harness.CalculatorSession()); dev.jcalculator.harness.HarnessProtocol.Outcome outcome = null;"
+    steps:
+      - call: "outcome = protocol.execute(dev.jcalculator.harness.Json.object(\"op\", \"memory_edit\", \"action\", \"load\", \"index\", 2));"
+        description: load a slot that was never stored
+    observation: "String.valueOf(outcome.response().get(\"errorCode\")) + \"|\" + outcome.response().get(\"ok\")"
+    invariant: "\"bad_request|false\".equals(observation)"

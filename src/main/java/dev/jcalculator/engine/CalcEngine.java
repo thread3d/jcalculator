@@ -9,7 +9,6 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Random;
 
@@ -31,25 +30,63 @@ import java.util.Random;
  *
  * <p>Arithmetic is exact ({@link Rational}); transcendental functions are computed to the mode's
  * precision. The engine never touches the UI directly: it reports through {@link EngineListener}.
+ *
+ * <p>The class is the state machine, and only that. It owns the original's
+ * {@code calc.cpp}/{@code scicomm.cpp} role — the pending operation, the precedence stacks, the
+ * parenthesis stack and the mode settings — and delegates the rest along the seams the original uses:
+ * {@link OperatorPrecedence} for binding power and the operator-replacement rule,
+ * {@link UnaryFunctions} for the functions that need no pending state, {@link DisplayFormatter} for
+ * turning a value into the displayed string, {@link BitMath} for the two's-complement word
+ * arithmetic, and {@link ExpressionBuilder} for the expression line and its history entries.
  */
 public final class CalcEngine {
 
     public static final int MAX_PRECEDENCE_DEPTH = 25;
 
-    public static final String ERROR_OVERFLOW = "Overflow";
-    public static final String ERROR_INVALID_INPUT = "Invalid input";
-    public static final String ERROR_DIVIDE_BY_ZERO = "Cannot divide by zero";
-    public static final String ERROR_UNDEFINED = "Result is undefined";
+    /** The overflow text; kept as an alias of {@link EngineError#OVERFLOW}. */
+    public static final String ERROR_OVERFLOW = EngineError.OVERFLOW.message();
+    /** The out-of-domain text; kept as an alias of {@link EngineError#DOMAIN}. */
+    public static final String ERROR_INVALID_INPUT = EngineError.DOMAIN.message();
+    /** The divide-by-zero text; kept as an alias of {@link EngineError#DIVIDE_BY_ZERO}. */
+    public static final String ERROR_DIVIDE_BY_ZERO = EngineError.DIVIDE_BY_ZERO.message();
+    /** The indeterminate-result text; kept as an alias of {@link EngineError#UNDEFINED}. */
+    public static final String ERROR_UNDEFINED = EngineError.UNDEFINED.message();
 
-    /** Display/history sink; the manager and the UI implement it. */
+    /**
+     * The sink the engine reports state through: the counterpart of the original's
+     * {@code ICalcDisplay}.
+     *
+     * <p>The engine never touches a view. Each method mirrors one callback the original raises from
+     * {@code scicomm.cpp}: the primary display, the expression tokens, the parenthesis depth, and the
+     * three signals a presentation layer may act on — a right parenthesis with nothing to close, a
+     * binary operator arriving, and the digit limit being reached.
+     *
+     * <p>The original also reports memorized-number changes through this interface. Here that list
+     * belongs to {@link dev.jcalculator.manager.CalculatorManager}, which owns it and reports it as
+     * part of its own state, so the engine has nothing to add.
+     */
     public interface EngineListener {
+
+        /** The primary display changed; {@code isError} marks the error text. */
         void onDisplay(String primaryDisplay, boolean isError);
 
-        void onExpression(String expression);
+        /** The expression line changed; the tokens keep the command behind each part. */
+        void onExpression(List<ExpressionToken> tokens);
 
+        /** The number of parentheses still open changed. */
+        void onParenthesisCount(int count);
+
+        /** A completed calculation was added. */
         void onHistoryEntry(HistoryEntry entry);
 
+        /** A digit was refused because the display is full; not an error. */
         void onMaxDigitsReached();
+
+        /** A right parenthesis was pressed with nothing to close; not an error. */
+        void onNoRightParen();
+
+        /** A binary operator was received, which a presentation layer may echo. */
+        void onBinaryOperatorReceived();
     }
 
     private final EngineListener listener;
@@ -82,6 +119,7 @@ public final class CalcEngine {
     private Rational holdValue = Rational.zero();
     private Rational memoryValue = Rational.zero();
     private String numberString = "0";
+    private EngineError engineError;
     private String errorMessage;
 
     private int openParenCount;
@@ -155,6 +193,16 @@ public final class CalcEngine {
         return errorMessage;
     }
 
+    /** The failure kind behind {@link #errorMessage()}, or {@code null} outside the error state. */
+    public EngineError error() {
+        return engineError;
+    }
+
+    /** The stable machine-readable code of {@link #error()}, or {@code null} outside that state. */
+    public String errorCode() {
+        return engineError == null ? null : engineError.code();
+    }
+
     /** The value shown on the primary display, already grouped. */
     public String display() {
         return NumberFormatter.group(numberString, radix);
@@ -180,6 +228,16 @@ public final class CalcEngine {
         return expression.completedEntries();
     }
 
+    /** The expression line as tokens, each paired with the command behind it. */
+    public List<ExpressionToken> expressionTokens() {
+        return expression.tokens();
+    }
+
+    /** The number of parentheses still open. */
+    public int parenthesisCount() {
+        return openParenCount;
+    }
+
     public Rational currentValue() {
         return currentValue;
     }
@@ -199,7 +257,7 @@ public final class CalcEngine {
 
     /** The current value as an integer in two's-complement form, for the programmer modes. */
     public BigInteger currentBits() {
-        return toBits(currentValue, width.bits());
+        return BitMath.toBits(currentValue, width.bits());
     }
 
     // ---- Public commands ------------------------------------------------------------------------
@@ -232,6 +290,7 @@ public final class CalcEngine {
         holdValue = Rational.zero();
         memoryValue = Rational.zero();
         numberString = "0";
+        engineError = null;
         errorMessage = null;
         openParenCount = 0;
         precedenceOpCount = 0;
@@ -243,6 +302,7 @@ public final class CalcEngine {
         expression.clearLine();
         expression.clearCompleted();
         notifyExpression();
+        notifyParenthesisCount();
         displayNum();
     }
 
@@ -361,8 +421,8 @@ public final class CalcEngine {
             case MEMORY_SUBTRACT -> memoryValue = truncateForIntegerMath(memoryValue.subtract(currentValue));
             case MEMORY_STORE -> memoryValue = truncateForIntegerMath(currentValue);
             case MEMORY_CLEAR -> memoryValue = Rational.zero();
-            case PI -> constant(RationalMath.pi(precision), inverse ? "2π" : "π");
-            case EULER -> constant(RationalMath.e(precision), "e");
+            case PI -> constant(RationalMath.pi(precision));
+            case EULER -> constant(RationalMath.e(precision));
             case RANDOM -> randomValue();
             case FLOAT_FORMAT -> {
                 scientificFormat = !scientificFormat;
@@ -387,13 +447,14 @@ public final class CalcEngine {
     }
 
     private void processBinary(Command command) {
+        notifyBinaryOperatorReceived();
         if (lastCommand.isBinary()) {
             boolean precedenceInversion = false;
             opCode = command;
             if (mode.hasPrecedence() && prevOpCode != null) {
-                final int previous = precedenceOf(prevOpCode);
-                final int current = precedenceOf(lastCommand);
-                final int incoming = precedenceOf(command);
+                final int previous = OperatorPrecedence.of(prevOpCode);
+                final int current = OperatorPrecedence.of(lastCommand);
+                final int incoming = OperatorPrecedence.of(command);
                 if (current <= previous && incoming > previous) {
                     precedenceInversion = true;
                     prevOpCode = null;
@@ -413,8 +474,8 @@ public final class CalcEngine {
             boolean again = true;
             while (again) {
                 again = false;
-                final int incoming = precedenceOf(command);
-                final int pending = opCode == null ? 0 : precedenceOf(opCode);
+                final int incoming = OperatorPrecedence.of(command);
+                final int pending = opCode == null ? 0 : OperatorPrecedence.of(opCode);
                 if (incoming > pending && mode.hasPrecedence()) {
                     if (precedenceOpCount < MAX_PRECEDENCE_DEPTH) {
                         precedenceValues[precedenceOpCount] = lastValue;
@@ -465,9 +526,9 @@ public final class CalcEngine {
             expression.addUnaryOperator(command, inverse, angleType);
         }
 
-        if (isTrigonometric(command) && isCurrentTooBigForTrig()) {
+        if (UnaryFunctions.isTrigonometric(command) && isCurrentTooBigForTrig()) {
             currentValue = Rational.zero();
-            displayError(ERROR_INVALID_INPUT);
+            displayError(EngineError.DOMAIN);
             return;
         }
 
@@ -485,7 +546,7 @@ public final class CalcEngine {
         }
         notifyExpression();
 
-        if (inverse && usesInverseFlag(command)) {
+        if (inverse && UnaryFunctions.usesInverseFlag(command)) {
             inverse = false;
         }
     }
@@ -560,6 +621,9 @@ public final class CalcEngine {
         if ((opening && openParenCount >= MAX_PRECEDENCE_DEPTH)
                 || (!opening && openParenCount == 0)
                 || (precedenceOpCount >= MAX_PRECEDENCE_DEPTH && precedenceOps[precedenceOpCount - 1] != null)) {
+            if (!opening && openParenCount == 0) {
+                notifyNoRightParen();
+            }
             handleErrorCommand(command);
             return;
         }
@@ -614,6 +678,7 @@ public final class CalcEngine {
         }
 
         notifyExpression();
+        notifyParenthesisCount();
         if (!error) {
             displayNum();
         }
@@ -663,7 +728,7 @@ public final class CalcEngine {
             expression.addOperand(numberString);
         }
         if (mode.isIntegerMode()) {
-            storeInteger(Rational.of(toBits(currentValue, width.bits()).negate()));
+            storeInteger(Rational.of(BitMath.toBits(currentValue, width.bits()).negate()));
         } else {
             currentValue = currentValue.negate();
         }
@@ -688,6 +753,7 @@ public final class CalcEngine {
         carryBit = false;
         expression.clearLine();
         notifyExpression();
+        notifyParenthesisCount();
         clearTemporaryValues();
     }
 
@@ -700,12 +766,13 @@ public final class CalcEngine {
         input.clear();
         record = true;
         error = false;
+        engineError = null;
         errorMessage = null;
         checkAndAddLastBinOpToHistory(true);
         displayNum();
     }
 
-    private void constant(BigDecimal value, String text) {
+    private void constant(BigDecimal value) {
         if (mode.isIntegerMode()) {
             handleErrorCommand(Command.NONE);
             return;
@@ -757,14 +824,14 @@ public final class CalcEngine {
                 case MULTIPLY -> lhs.multiply(rhs);
                 case DIVIDE -> {
                     if (lhs.isZero()) {
-                        displayError(rhs.isZero() ? ERROR_UNDEFINED : ERROR_DIVIDE_BY_ZERO);
+                        displayError(rhs.isZero() ? EngineError.UNDEFINED : EngineError.DIVIDE_BY_ZERO);
                         yield rhs;
                     }
                     yield rhs.divide(lhs);
                 }
                 case MOD -> {
                     if (lhs.isZero()) {
-                        displayError(rhs.isZero() ? ERROR_UNDEFINED : ERROR_DIVIDE_BY_ZERO);
+                        displayError(rhs.isZero() ? EngineError.UNDEFINED : EngineError.DIVIDE_BY_ZERO);
                         yield rhs;
                     }
                     yield rhs.modulo(lhs);
@@ -780,21 +847,24 @@ public final class CalcEngine {
                 }
                 default -> {
                     // Bitwise operators are programmer-mode only.
-                    displayError(ERROR_INVALID_INPUT);
+                    displayError(EngineError.DOMAIN);
                     yield lhs;
                 }
             };
+        } catch (CalculationException failure) {
+            displayError(failure.error());
+            return lhs;
         } catch (ArithmeticException exception) {
-            displayError(ERROR_INVALID_INPUT);
+            displayError(EngineError.DOMAIN);
             return lhs;
         }
     }
 
     private Rational doIntegerOperation(Command operation, Rational lhsValue, Rational rhsValue) {
-        final BigInteger lhsBits = toBits(lhsValue, width.bits());
-        final BigInteger rhsBits = toBits(rhsValue, width.bits());
-        final BigInteger lhsSigned = toSigned(lhsValue, width.bits());
-        final BigInteger rhsSigned = toSigned(rhsValue, width.bits());
+        final BigInteger lhsBits = BitMath.toBits(lhsValue, width.bits());
+        final BigInteger rhsBits = BitMath.toBits(rhsValue, width.bits());
+        final BigInteger lhsSigned = BitMath.toSigned(lhsValue, width.bits());
+        final BigInteger rhsSigned = BitMath.toSigned(rhsValue, width.bits());
         BigInteger result;
         switch (operation) {
             case ADD -> result = lhsSigned.add(rhsSigned);
@@ -802,14 +872,14 @@ public final class CalcEngine {
             case MULTIPLY -> result = lhsSigned.multiply(rhsSigned);
             case DIVIDE -> {
                 if (lhsSigned.signum() == 0) {
-                    displayError(rhsSigned.signum() == 0 ? ERROR_UNDEFINED : ERROR_DIVIDE_BY_ZERO);
+                    displayError(rhsSigned.signum() == 0 ? EngineError.UNDEFINED : EngineError.DIVIDE_BY_ZERO);
                     return rhsValue;
                 }
                 result = rhsSigned.divide(lhsSigned);
             }
             case MOD -> {
                 if (lhsSigned.signum() == 0) {
-                    displayError(rhsSigned.signum() == 0 ? ERROR_UNDEFINED : ERROR_DIVIDE_BY_ZERO);
+                    displayError(rhsSigned.signum() == 0 ? EngineError.UNDEFINED : EngineError.DIVIDE_BY_ZERO);
                     return rhsValue;
                 }
                 result = rhsSigned.remainder(lhsSigned);
@@ -821,14 +891,14 @@ public final class CalcEngine {
             case NOR -> result = lhsBits.or(rhsBits).xor(mask());
             case LEFT_SHIFT -> {
                 if (lhsSigned.signum() < 0 || lhsSigned.compareTo(BigInteger.valueOf(width.bits())) >= 0) {
-                    displayError(ERROR_INVALID_INPUT);
+                    displayError(EngineError.INVALID_RANGE);
                     return rhsValue;
                 }
                 result = rhsBits.shiftLeft(lhsSigned.intValue());
             }
             case RIGHT_SHIFT -> {
                 if (lhsSigned.signum() < 0 || lhsSigned.compareTo(BigInteger.valueOf(width.bits())) >= 0) {
-                    displayError(ERROR_INVALID_INPUT);
+                    displayError(EngineError.INVALID_RANGE);
                     return rhsValue;
                 }
                 result = rhsBits.shiftRight(lhsSigned.intValue());
@@ -839,35 +909,35 @@ public final class CalcEngine {
             }
             case RIGHT_SHIFT_LOGICAL -> {
                 if (lhsSigned.signum() < 0 || lhsSigned.compareTo(BigInteger.valueOf(width.bits())) >= 0) {
-                    displayError(ERROR_INVALID_INPUT);
+                    displayError(EngineError.INVALID_RANGE);
                     return rhsValue;
                 }
                 result = rhsBits.shiftRight(lhsSigned.intValue());
             }
             case POWER -> {
                 if (lhsSigned.signum() < 0 || lhsSigned.bitLength() > 20) {
-                    displayError(ERROR_INVALID_INPUT);
+                    displayError(EngineError.INVALID_RANGE);
                     return rhsValue;
                 }
                 result = rhsSigned.pow(lhsSigned.intValue());
             }
             case ROOT -> {
                 if (lhsSigned.signum() <= 0 || lhsSigned.bitLength() > 20) {
-                    displayError(ERROR_INVALID_INPUT);
+                    displayError(EngineError.INVALID_RANGE);
                     return rhsValue;
                 }
-                result = integerRoot(rhsSigned, lhsSigned.intValue());
+                result = BitMath.integerRoot(rhsSigned, lhsSigned.intValue());
             }
             case LOGBASEY -> {
                 if (rhsSigned.signum() <= 0 || lhsSigned.signum() <= 0 || lhsSigned.equals(BigInteger.ONE)) {
-                    displayError(ERROR_INVALID_INPUT);
+                    displayError(EngineError.DOMAIN);
                     return rhsValue;
                 }
                 final double log = Math.log(rhsSigned.doubleValue()) / Math.log(lhsSigned.doubleValue());
                 result = BigDecimal.valueOf(log).toBigInteger();
             }
             default -> {
-                displayError(ERROR_INVALID_INPUT);
+                displayError(EngineError.DOMAIN);
                 return rhsValue;
             }
         }
@@ -877,72 +947,16 @@ public final class CalcEngine {
     private Rational applyUnary(Command command, Rational value) {
         try {
             return switch (command) {
-                case INTEGER_PART -> inverse ? fractionalPart(value) : value.truncate();
-                case FRACTIONAL_PART -> fractionalPart(value);
-                case COMPLEMENT -> complement(value);
-                case SIN -> inverse ? RationalMath.asin(value, angleType, precision) : RationalMath.sin(value, angleType, precision);
-                case COS -> inverse ? RationalMath.acos(value, angleType, precision) : RationalMath.cos(value, angleType, precision);
-                case TAN -> inverse ? RationalMath.atan(value, angleType, precision) : RationalMath.tan(value, angleType, precision);
-                case SINH -> inverse ? RationalMath.asinh(value, precision) : RationalMath.sinh(value, precision);
-                case COSH -> inverse ? RationalMath.acosh(value, precision) : RationalMath.cosh(value, precision);
-                case TANH -> inverse ? RationalMath.atanh(value, precision) : RationalMath.tanh(value, precision);
-                case SEC -> inverse
-                        ? RationalMath.acos(invert(value), angleType, precision)
-                        : invert(RationalMath.cos(value, angleType, precision));
-                case CSC -> inverse
-                        ? RationalMath.asin(invert(value), angleType, precision)
-                        : invert(RationalMath.sin(value, angleType, precision));
-                case COT -> inverse
-                        ? RationalMath.atan(invert(value), angleType, precision)
-                        : invert(RationalMath.tan(value, angleType, precision));
-                case SECH -> inverse
-                        ? RationalMath.acosh(invert(value), precision)
-                        : invert(RationalMath.cosh(value, precision));
-                case CSCH -> inverse
-                        ? RationalMath.asinh(invert(value), precision)
-                        : invert(RationalMath.sinh(value, precision));
-                case COTH -> inverse
-                        ? RationalMath.atanh(invert(value), precision)
-                        : invert(RationalMath.tanh(value, precision));
-                case ASIN -> RationalMath.asin(value, angleType, precision);
-                case ACOS -> RationalMath.acos(value, angleType, precision);
-                case ATAN -> RationalMath.atan(value, angleType, precision);
-                case ASINH -> RationalMath.asinh(value, precision);
-                case ACOSH -> RationalMath.acosh(value, precision);
-                case ATANH -> RationalMath.atanh(value, precision);
-                case ASEC -> RationalMath.acos(invert(value), angleType, precision);
-                case ACSC -> RationalMath.asin(invert(value), angleType, precision);
-                case ACOT -> RationalMath.atan(invert(value), angleType, precision);
-                case ASECH -> RationalMath.acosh(invert(value), precision);
-                case ACSCH -> RationalMath.asinh(invert(value), precision);
-                case ACOTH -> RationalMath.atanh(invert(value), precision);
-                case LN -> inverse ? RationalMath.exp(value, precision) : RationalMath.ln(value, precision);
-                case LOG -> RationalMath.log10(value, precision);
-                case SQRT -> RationalMath.sqrt(value, precision);
-                case SQR -> RationalMath.pow(value, Rational.two(), precision);
-                case CUBE -> RationalMath.pow(value, Rational.of(3), precision);
-                case CUBEROOT -> RationalMath.root(value, Rational.of(3), precision);
-                case FACTORIAL -> RationalMath.factorial(value, precision);
-                case RECIPROCAL -> invert(value);
-                case DMS -> inverse
-                        ? RationalMath.fromDegreesMinutesSeconds(value, precision)
-                        : RationalMath.toDegreesMinutesSeconds(value, precision);
-                case DEGREES -> RationalMath.fromDegreesMinutesSeconds(value, precision);
-                case POW10 -> RationalMath.pow(Rational.ten(), value, precision);
-                case POW2 -> RationalMath.pow(Rational.two(), value, precision);
-                case POW_E -> RationalMath.exp(value, precision);
                 case PERCENT -> percent(value);
-                case ABS -> value.abs();
-                case CEIL -> value.ceiling();
-                case FLOOR -> value.floor();
+                case COMPLEMENT -> complement(value);
                 case ROTATE_LEFT -> rotateLeft(value);
                 case ROTATE_RIGHT -> rotateRight(value);
                 case ROTATE_LEFT_CARRY -> rotateLeftCarry(value);
                 case ROTATE_RIGHT_CARRY -> rotateRightCarry(value);
-                default -> value;
+                default -> UnaryFunctions.apply(command, value, inverse, angleType, precision);
             };
-        } catch (ArithmeticException exception) {
-            displayError(ERROR_INVALID_INPUT);
+        } catch (CalculationException failure) {
+            displayError(failure.error());
             return value;
         }
     }
@@ -956,19 +970,19 @@ public final class CalcEngine {
 
     private Rational complement(Rational value) {
         if (mode.isIntegerMode()) {
-            return Rational.of(toBits(value, width.bits()).xor(mask()));
+            return Rational.of(BitMath.toBits(value, width.bits()).xor(mask()));
         }
         if (radix == 10) {
             return value.truncate().add(Rational.one()).negate();
         }
-        return Rational.of(toBits(value, width.bits()).xor(mask()));
+        return Rational.of(BitMath.toBits(value, width.bits()).xor(mask()));
     }
 
     private Rational rotateLeft(Rational value) {
         if (!mode.isIntegerMode()) {
             return value;
         }
-        final BigInteger bits = toBits(value, width.bits());
+        final BigInteger bits = BitMath.toBits(value, width.bits());
         final int msb = bits.testBit(width.bits() - 1) ? 1 : 0;
         BigInteger rotated = bits.shiftLeft(1).and(mask());
         if (msb == 1) {
@@ -981,7 +995,7 @@ public final class CalcEngine {
         if (!mode.isIntegerMode()) {
             return value;
         }
-        final BigInteger bits = toBits(value, width.bits());
+        final BigInteger bits = BitMath.toBits(value, width.bits());
         final boolean lsb = bits.testBit(0);
         BigInteger rotated = bits.shiftRight(1);
         if (lsb) {
@@ -994,7 +1008,7 @@ public final class CalcEngine {
         if (!mode.isIntegerMode()) {
             return value;
         }
-        final BigInteger bits = toBits(value, width.bits());
+        final BigInteger bits = BitMath.toBits(value, width.bits());
         final boolean msb = bits.testBit(width.bits() - 1);
         BigInteger rotated = bits.shiftLeft(1).and(mask());
         if (carryBit) {
@@ -1008,7 +1022,7 @@ public final class CalcEngine {
         if (!mode.isIntegerMode()) {
             return value;
         }
-        final BigInteger bits = toBits(value, width.bits());
+        final BigInteger bits = BitMath.toBits(value, width.bits());
         final boolean lsb = bits.testBit(0);
         BigInteger rotated = bits.shiftRight(1);
         if (carryBit) {
@@ -1016,18 +1030,6 @@ public final class CalcEngine {
         }
         carryBit = lsb;
         return Rational.of(rotated);
-    }
-
-    private Rational fractionalPart(Rational value) {
-        return value.subtract(value.truncate());
-    }
-
-    private Rational invert(Rational value) {
-        if (value.isZero()) {
-            displayError(ERROR_DIVIDE_BY_ZERO);
-            return value;
-        }
-        return Rational.one().divide(value);
     }
 
     // ---- Settings -------------------------------------------------------------------------------
@@ -1043,7 +1045,7 @@ public final class CalcEngine {
         }
         if (mode.isIntegerMode() && newWidth != null && newWidth != width) {
             final int oldBits = width.bits();
-            final BigInteger oldValue = toBits(currentValue, oldBits);
+            final BigInteger oldValue = BitMath.toBits(currentValue, oldBits);
             final boolean negative = oldValue.testBit(oldBits - 1);
             BigInteger widened = oldValue;
             if (negative && newWidth.bits() > oldBits) {
@@ -1084,9 +1086,11 @@ public final class CalcEngine {
             if (mode.isIntegerMode()) {
                 currentValue = truncateForIntegerMath(currentValue);
             }
-            numberString = formatValue(currentValue);
-            if (numberString.isEmpty()) {
-                displayError(ERROR_OVERFLOW);
+            try {
+                numberString = DisplayFormatter.format(currentValue, mode, radix, width, precision,
+                        scientificFormat);
+            } catch (CalculationException failure) {
+                displayError(failure.error());
                 return;
             }
         }
@@ -1097,7 +1101,25 @@ public final class CalcEngine {
 
     private void notifyExpression() {
         if (listener != null) {
-            listener.onExpression(expression());
+            listener.onExpression(expression.tokens());
+        }
+    }
+
+    private void notifyParenthesisCount() {
+        if (listener != null) {
+            listener.onParenthesisCount(openParenCount);
+        }
+    }
+
+    private void notifyNoRightParen() {
+        if (listener != null) {
+            listener.onNoRightParen();
+        }
+    }
+
+    private void notifyBinaryOperatorReceived() {
+        if (listener != null) {
+            listener.onBinaryOperatorReceived();
         }
     }
 
@@ -1107,46 +1129,15 @@ public final class CalcEngine {
         }
     }
 
-    private String formatValue(Rational value) {
-        if (mode.isIntegerMode()) {
-            final BigInteger bits = toBits(value, width.bits());
-            String text;
-            if (radix == 10) {
-                text = toSigned(value, width.bits()).toString();
-            } else {
-                text = bits.toString(radix).toUpperCase(Locale.ROOT);
-            }
-            return text;
-        }
-        if (isOverflow(value)) {
-            displayError(ERROR_OVERFLOW);
-            return "";
-        }
-        return NumberFormatter.format(value, precision, scientificFormat);
-    }
-
-    private boolean isOverflow(Rational value) {
-        final Rational magnitude = value.abs();
-        if (magnitude.isZero()) {
-            return false;
-        }
-        if (magnitude.integerDigitCount() > 10_000) {
-            return true;
-        }
-        if (magnitude.compareTo(Rational.one()) < 0) {
-            return magnitude.denominator().toString().length() > 10_000;
-        }
-        return false;
-    }
-
-    private void displayError(String message) {
+    private void displayError(EngineError failure) {
         error = true;
-        errorMessage = message;
-        numberString = message;
+        engineError = failure;
+        errorMessage = failure.message();
+        numberString = failure.message();
         expression.clearLine();
         notifyExpression();
         if (listener != null) {
-            listener.onDisplay(message, true);
+            listener.onDisplay(failure.message(), true);
         }
     }
 
@@ -1162,14 +1153,14 @@ public final class CalcEngine {
         final CalcInput.RationalValue value = input.toRationalValue(radix);
         final Rational parsed = Rational.of(value.numerator(), value.denominator());
         if (mode.isIntegerMode()) {
-            return Rational.of(toBits(parsed, width.bits()));
+            return Rational.of(BitMath.toBits(parsed, width.bits()));
         }
         return parsed;
     }
 
     private void storeInteger(Rational value) {
         if (mode.isIntegerMode()) {
-            currentValue = Rational.of(toBits(value, width.bits()));
+            currentValue = Rational.of(BitMath.toBits(value, width.bits()));
         }
     }
 
@@ -1177,53 +1168,11 @@ public final class CalcEngine {
         if (!mode.isIntegerMode()) {
             return value;
         }
-        return Rational.of(toBits(value, width.bits()));
-    }
-
-    private BigInteger toBits(Rational value, int bits) {
-        final BigInteger modulusMask = BigInteger.ONE.shiftLeft(bits).subtract(BigInteger.ONE);
-        final Rational truncated = value.truncate();
-        return truncated.numerator().and(modulusMask);
-    }
-
-    private BigInteger toSigned(Rational value, int bits) {
-        final BigInteger unsigned = toBits(value, bits);
-        if (unsigned.testBit(bits - 1)) {
-            return unsigned.subtract(BigInteger.ONE.shiftLeft(bits));
-        }
-        return unsigned;
+        return Rational.of(BitMath.toBits(value, width.bits()));
     }
 
     private BigInteger mask() {
-        return BigInteger.ONE.shiftLeft(width.bits()).subtract(BigInteger.ONE);
-    }
-
-    private BigInteger integerRoot(BigInteger value, int degree) {
-        if (degree <= 0) {
-            throw new ArithmeticException("bad root degree");
-        }
-        final boolean negative = value.signum() < 0;
-        if (negative && degree % 2 == 0) {
-            throw new ArithmeticException("even root of a negative number");
-        }
-        final BigInteger magnitude = value.abs();
-        if (magnitude.equals(BigInteger.ZERO) || magnitude.equals(BigInteger.ONE)) {
-            return negative ? magnitude.negate() : magnitude;
-        }
-        BigInteger guess = BigInteger.ONE.shiftLeft((magnitude.bitLength() + degree - 1) / degree);
-        BigInteger previous = null;
-        while (!guess.equals(previous)) {
-            previous = guess;
-            guess = magnitude.divide(guess.pow(degree - 1)).add(guess.multiply(BigInteger.valueOf(degree - 1)))
-                    .divide(BigInteger.valueOf(degree));
-        }
-        while (guess.pow(degree).compareTo(magnitude) > 0) {
-            guess = guess.subtract(BigInteger.ONE);
-        }
-        while (guess.add(BigInteger.ONE).pow(degree).compareTo(magnitude) <= 0) {
-            guess = guess.add(BigInteger.ONE);
-        }
-        return negative ? guess.negate() : guess;
+        return BitMath.mask(width.bits());
     }
 
     private int maxInputDigits() {
@@ -1241,20 +1190,6 @@ public final class CalcEngine {
 
     private boolean isCurrentTooBigForTrig() {
         return currentValue.abs().integerDigitCount() > 100;
-    }
-
-    private static int precedenceOf(Command command) {
-        if (command == null) {
-            return 0;
-        }
-        return switch (command) {
-            case OR, XOR -> 0;
-            case AND, NAND, NOR -> 1;
-            case ADD, SUBTRACT -> 2;
-            case LEFT_SHIFT, RIGHT_SHIFT, RIGHT_SHIFT_LOGICAL, MOD, DIVIDE, MULTIPLY -> 3;
-            case POWER, ROOT, LOGBASEY -> 4;
-            default -> 0;
-        };
     }
 
     private static boolean isRadixCommand(Command command) {
@@ -1287,22 +1222,6 @@ public final class CalcEngine {
             case WIDTH_WORD -> NumberWidth.WORD;
             case WIDTH_BYTE -> NumberWidth.BYTE;
             default -> NumberWidth.QWORD;
-        };
-    }
-
-    private static boolean isTrigonometric(Command command) {
-        return switch (command) {
-            case SIN, COS, TAN, SINH, COSH, TANH, SEC, CSC, COT, SECH, CSCH, COTH,
-                    ASIN, ACOS, ATAN, ASINH, ACOSH, ATANH, ASEC, ACSC, ACOT, ASECH, ACSCH, ACOTH -> true;
-            default -> false;
-        };
-    }
-
-    private static boolean usesInverseFlag(Command command) {
-        return switch (command) {
-            case INTEGER_PART, SIN, COS, TAN, LN, DMS, DEGREES, SINH, COSH, TANH,
-                    SEC, CSC, COT, SECH, CSCH, COTH -> true;
-            default -> false;
         };
     }
 

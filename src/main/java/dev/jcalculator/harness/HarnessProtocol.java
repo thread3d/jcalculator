@@ -2,6 +2,7 @@ package dev.jcalculator.harness;
 
 import dev.jcalculator.app.AppInfo;
 import dev.jcalculator.convert.UnitCategory;
+import dev.jcalculator.core.Rational;
 import dev.jcalculator.diagnostics.Faults;
 import dev.jcalculator.diagnostics.Issue;
 import dev.jcalculator.diagnostics.IssueDisposition;
@@ -31,7 +32,8 @@ import java.util.Optional;
  *
  * <pre>
  *   {"id":1,"op":"press","ok":true,"errorCode":null,"error":false,"errorMessage":null,
- *    "display":"20","rawDisplay":"20","expression":"","mode":"STANDARD","radix":10,
+ *    "display":"20","rawDisplay":"20","expression":"","parenthesis":0,"signal":null,
+ *    "mode":"STANDARD","radix":10,
  *    "width":"QWORD","angle":"DEGREES","result":null,"history":[],"memory":[]}
  * </pre>
  *
@@ -66,8 +68,8 @@ public final class HarnessProtocol {
     public static List<String> operations() {
         return List.of(
                 "press", "evaluate", "state", "reset", "mode", "convert",
-                "date_diff", "date_add", "date_subtract", "history", "memory", "capabilities",
-                "report_issue", "issues", "resolve_issue");
+                "date_diff", "date_add", "date_subtract", "history", "memory", "memory_edit",
+                "capabilities", "report_issue", "issues", "resolve_issue");
     }
 
     /** A response document and the process exit code it implies. */
@@ -164,6 +166,7 @@ public final class HarnessProtocol {
                 case "date_add" -> dateAdd(id, request, false);
                 case "date_subtract" -> dateAdd(id, request, true);
                 case "history", "memory" -> success(id, op, null, EXIT_OK);
+                case "memory_edit" -> memoryEdit(id, request);
                 case "capabilities" -> capabilities(id);
                 case "report_issue" -> reportIssue(id, request);
                 case "issues" -> issues(id, request);
@@ -263,6 +266,49 @@ public final class HarnessProtocol {
                     "out_of_range", "date result is out of range");
         }
         return success(id, subtract ? "date_subtract" : "date_add", result.toString(), EXIT_OK);
+    }
+
+    /**
+     * Edits one memorized slot.
+     *
+     * <p>The request names an {@code action} — {@code add}, {@code subtract}, {@code load} or
+     * {@code clear} — and optionally the {@code index} of the slot, counting from the newest. This is
+     * the per-slot form of the memory keys: {@code MS} stores a new slot, and this operation adjusts,
+     * recalls or removes an existing one the way the original's memory list does.
+     *
+     * <p>A slot that does not exist is a {@code bad_request} rather than an index error, and
+     * {@code add}/{@code subtract} on an empty list store the displayed value, which is the
+     * original's behaviour when there is no memory to adjust.
+     */
+    private Outcome memoryEdit(Object id, Map<String, Object> request) {
+        final String action = Json.optionalString(request, "action", null);
+        if (action == null) {
+            return failure(id, "memory_edit", "bad_request",
+                    "memory_edit requires an action: add, subtract, load or clear");
+        }
+        final int index = Json.integer(request, "index", 0);
+        if (index < 0) {
+            return failure(id, "memory_edit", "bad_request", "index must not be negative");
+        }
+        final List<Rational> slots = session.manager().memorizedNumbers();
+        final boolean knownAction = "add".equals(action) || "subtract".equals(action)
+                || "load".equals(action) || "clear".equals(action);
+        if (!knownAction) {
+            return failure(id, "memory_edit", "bad_request",
+                    "unknown memory action: " + action + " (use add, subtract, load or clear)");
+        }
+        final boolean adjusts = "add".equals(action) || "subtract".equals(action);
+        if ((!adjusts || !slots.isEmpty()) && index >= slots.size()) {
+            return failure(id, "memory_edit", "bad_request",
+                    "no memorized value at index " + index + "; store one with MS first");
+        }
+        switch (action) {
+            case "load" -> session.manager().memorizedNumberLoad(index);
+            case "add" -> session.manager().memorizedNumberAdd(index);
+            case "subtract" -> session.manager().memorizedNumberSubtract(index);
+            default -> session.manager().memorizedNumberClear(index);
+        }
+        return success(id, "memory_edit", null, EXIT_OK);
     }
 
     private Outcome capabilities(Object id) {
@@ -426,6 +472,8 @@ public final class HarnessProtocol {
                 "display", state.display(),
                 "rawDisplay", state.rawDisplay(),
                 "expression", state.expression(),
+                "parenthesis", state.parenthesisCount(),
+                "signal", state.signal(),
                 "mode", state.mode().name(),
                 "radix", state.radix(),
                 "width", state.width().name(),

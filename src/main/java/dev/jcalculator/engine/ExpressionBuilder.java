@@ -9,84 +9,108 @@ import java.util.List;
  * Builds the expression line shown above the primary display, and turns a completed computation into
  * a history entry.
  *
- * <p>The original engine delegates this to a history collector with a token stream and expression
- * commands, because the UI renders each token separately. This port only needs the rendered text, so
- * the same rules are expressed more directly:
+ * <p>The counterpart of the original's history collector. The original works in two layers: the
+ * engine keeps an equation as a string buffer with the start index of every operand and operator, and
+ * the history collector rewrites that buffer. This class keeps the same information as a list of
+ * {@link ExpressionToken}s, which is also what the display layer receives, so the two never disagree
+ * about what the line says.
+ *
+ * <p>The rules the original applies, and this class reproduces:
  *
  * <ul>
- *   <li>a binary operator is appended after its left operand, with spaces;</li>
- *   <li>changing the operator replaces the last operator token instead of appending;</li>
+ *   <li>a binary operator is appended after its left operand;</li>
+ *   <li>pressing a different operator over a pending one replaces it, and when the new operator binds
+ *       more tightly than the one before, the already-computed left operand is enclosed;</li>
  *   <li>a unary function wraps the operand it applies to;</li>
  *   <li>equals appends {@code =} and produces an immutable entry.</li>
  * </ul>
  */
 public final class ExpressionBuilder {
 
-    private final List<String> tokens = new ArrayList<>();
+    private final List<ExpressionToken> tokens = new ArrayList<>();
     private final List<HistoryEntry> completed = new ArrayList<>();
     private String lastCompletedExpression;
 
     /** Whether the most recent token is an operand rather than an operator. */
     public boolean operandAdded() {
-        return !tokens.isEmpty() && isOperand(tokens.get(tokens.size() - 1));
+        return !tokens.isEmpty() && tokens.get(tokens.size() - 1).isOperand();
+    }
+
+    /** The tokens of the line as the display shows it, including the equals sign once it is complete. */
+    public List<ExpressionToken> tokens() {
+        if (lastCompletedExpression == null) {
+            return List.copyOf(tokens);
+        }
+        final List<ExpressionToken> shown = new ArrayList<>(tokens);
+        shown.add(new ExpressionToken("=", Command.EQUALS));
+        return List.copyOf(shown);
     }
 
     public void addOperand(String text) {
-        tokens.add(text);
+        tokens.add(new ExpressionToken(text, null));
     }
 
     public void addOpenBrace() {
-        tokens.add("(");
+        tokens.add(new ExpressionToken("(", Command.OPEN_PAREN));
     }
 
     public void addCloseBrace() {
-        tokens.add(")");
+        tokens.add(new ExpressionToken(")", Command.CLOSE_PAREN));
     }
 
     public void addBinaryOperator(Command operator, boolean integerMode) {
         if (tokens.isEmpty()) {
-            tokens.add("0");
+            addOperand("0");
         }
-        if (!tokens.isEmpty() && isBinaryToken(tokens.get(tokens.size() - 1))) {
-            tokens.set(tokens.size() - 1, operator.expressionToken(integerMode));
+        final ExpressionToken token = new ExpressionToken(operator.expressionToken(integerMode), operator);
+        if (tokens.get(tokens.size() - 1).isBinaryOperator()) {
+            tokens.set(tokens.size() - 1, token);
         } else {
-            tokens.add(operator.expressionToken(integerMode));
+            tokens.add(token);
         }
     }
 
-    /** Replaces the trailing operator; used when the user presses a different operator. */
+    /**
+     * Replaces the trailing operator, as pressing a second operator does.
+     *
+     * <p>The original's {@code ChangeLastBinOp}: the pending operator is removed and the new one takes
+     * its place. When that would invert precedence — {@code 1 × 2 +} becomes {@code ^}, and the
+     * partial result {@code 1 × 2} was already computed — the left operand is enclosed so the line
+     * still says what was calculated.
+     *
+     * @param operator           the operator just pressed
+     * @param integerMode        whether the programmer page's spellings apply
+     * @param precedenceInversion whether the left operand has to be enclosed
+     */
     public void replaceBinaryOperator(Command operator, boolean integerMode, boolean precedenceInversion) {
         if (tokens.isEmpty()) {
             addBinaryOperator(operator, integerMode);
             return;
         }
         final int index = tokens.size() - 1;
-        if (isBinaryToken(tokens.get(index))) {
-            final String previous = tokens.get(index);
-            if (precedenceInversion) {
-                // The original encloses the already-computed left operand when the new operator binds
-                // more tightly than the replaced one, e.g. "1 * 2 +" changed to "^" becomes "(1 * 2) ^".
-                tokens.add(index + 1, ")");
-                tokens.add(0, "(");
-                tokens.add(operator.expressionToken(integerMode));
-            } else {
-                tokens.set(index, operator.expressionToken(integerMode));
-            }
+        if (!tokens.get(index).isBinaryOperator()) {
+            addBinaryOperator(operator, integerMode);
             return;
         }
-        addBinaryOperator(operator, integerMode);
+        tokens.remove(index);
+        if (precedenceInversion) {
+            tokens.add(0, new ExpressionToken("(", Command.OPEN_PAREN));
+            tokens.add(new ExpressionToken(")", Command.CLOSE_PAREN));
+        }
+        tokens.add(new ExpressionToken(operator.expressionToken(integerMode), operator));
     }
 
     public void addUnaryOperator(Command operator, boolean inverse, AngleType angleType) {
         if (tokens.isEmpty()) {
-            tokens.add("0");
+            addOperand("0");
         }
         final int last = tokens.size() - 1;
-        final String operand = tokens.get(last);
-        if (isOperand(operand)) {
-            tokens.set(last, renderUnary(operator, operand, inverse, angleType));
+        final ExpressionToken operand = tokens.get(last);
+        if (operand.isOperand()) {
+            tokens.set(last, new ExpressionToken(
+                    renderUnary(operator, operand.text(), inverse, angleType), operator));
         } else {
-            tokens.add(renderUnary(operator, "0", inverse, angleType));
+            tokens.add(new ExpressionToken(renderUnary(operator, "0", inverse, angleType), operator));
         }
     }
 
@@ -99,23 +123,16 @@ public final class ExpressionBuilder {
 
     /** Appends an equals sign and records the entry. */
     public HistoryEntry completeEquation(String result) {
-        final String expression = currentLine() + "=";
+        final String expression = ExpressionToken.render(tokens) + "=";
         final HistoryEntry entry = new HistoryEntry(expression, result);
         completed.add(entry);
         lastCompletedExpression = expression;
         return entry;
     }
 
+    /** The line as one string, which is what the expression area renders. */
     public String currentLine() {
-        final StringBuilder builder = new StringBuilder();
-        for (int i = 0; i < tokens.size(); i++) {
-            final String token = tokens.get(i);
-            if (i > 0 && !token.equals(")") && !tokens.get(i - 1).equals("(")) {
-                builder.append(' ');
-            }
-            builder.append(token);
-        }
-        return builder.toString();
+        return ExpressionToken.render(tokens());
     }
 
     public List<HistoryEntry> completedEntries() {
@@ -137,21 +154,8 @@ public final class ExpressionBuilder {
     }
 
     public void removeLastOperand() {
-        if (!tokens.isEmpty() && isOperand(tokens.get(tokens.size() - 1))) {
+        if (!tokens.isEmpty() && tokens.get(tokens.size() - 1).isOperand()) {
             tokens.remove(tokens.size() - 1);
         }
-    }
-
-    private static boolean isOperand(String token) {
-        return !isBinaryToken(token) && !token.equals("(");
-    }
-
-    private static boolean isBinaryToken(String token) {
-        return switch (token) {
-            case "+", "-", "×", "÷", "^", "yroot", "log base", "mod", "MOD",
-                    "AND", "OR", "XOR", "NAND", "NOR", "Lsh", "Rsh", "Rsh logical",
-                    "ROL", "ROR", "ROL carry", "ROR carry" -> true;
-            default -> false;
-        };
     }
 }

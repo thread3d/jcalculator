@@ -229,3 +229,49 @@ is refused with a message that names the expected shape instead of complaining t
 missing. A malformed request is not recorded in the issue journal, because the response already
 explains it; `internal_error` is reserved for a failure the calculator did not expect.
 
+
+# R-030 The engine reports through the original's display protocol
+
+The engine never touches a view. It reports the primary display and whether it is the error text, the
+expression as a stream of tokens, the parenthesis depth, and each completed history entry. A token
+keeps the command behind it as well as its text, because the original hands its presentation layer a
+pair of text and command for every part of the expression, so a view can treat an operator differently
+from an operand. Three further reports are signals rather than failures: a digit refused because the
+display is full, a right parenthesis pressed with nothing open to close, and a binary operator
+arriving. The manager implements the sink, exposes the parenthesis depth, and remembers the last
+signal so an automation surface can tell that the calculator complained without treating the
+complaint as an error. A signal never changes the display and never sets the error state.
+
+# R-031 A failure carries a code as well as the text the display shows
+
+Every failure the engine can raise is named, so a caller can tell one from another without matching on
+display text. The names follow the original's error codes: `divide_by_zero`, `undefined` (both sides
+of a quotient were zero), `overflow`, `domain` (the input is outside the function's domain) and
+`invalid_range` (a value the operation cannot accept, such as a shift wider than the word). The code is
+readable while the error is in force and clears when the user clears, and the text shown on the display
+is the one the calculator has always shown: `Cannot divide by zero`, `Result is undefined`, `Overflow`
+and `Invalid input`. The domain and range codes deliberately share that last text, exactly as the
+original's domain and invalid-range results map to one resource string.
+
+# R-032 The expression line is a token stream and keeps the completed equation
+
+The expression line is built from tokens, not from a pre-rendered string, so the display layer receives
+the same structure the engine used to build it. Pressing equals leaves the completed equation on the
+line until the next key. Pressing an operator over a pending one replaces it; when the replacement binds
+more tightly than the operator before it, the part that was already computed is enclosed instead of
+being left ambiguous, so `1 × 2 +` followed by `^` reads `(1 × 2) ^` and not `1 × 2 +`. The replaced
+operator does not survive inside the brackets.
+
+# R-033 Memory slots are edited individually
+
+A memorized value is a slot in a list, newest first, and every memory key acts on the slot it is given
+rather than only on the newest one: `MS` stores a new slot, and a slot can be loaded, added to,
+subtracted from and removed by index. Adding to or subtracting from an empty memory stores the displayed
+value first, which is what the original does when there is no memory to adjust; subtracting from an
+empty memory therefore leaves the negation of the displayed value. Removing a slot that does not exist
+is harmless, while asking the protocol to edit a slot that does not exist is refused as a
+`bad_request` naming the index. The arithmetic stays in the engine: the manager selects the slot into
+the engine's immediate memory, runs the memory command there and copies the result back, as the
+original's memory functions do. Every change to the list — a stored slot, an adjusted slot, a removed
+slot — raises the `memory_changed` signal, so a presentation layer can redraw the memory list without
+diffing it, and a recall raises `input_changed` because it changes the display without a keystroke.

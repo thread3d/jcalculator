@@ -77,6 +77,10 @@ public final class CalculatorTools {
                     "subtract", arguments.get("subtract"));
             case "calculator_history" -> Json.object("op", "history");
             case "calculator_memory" -> Json.object("op", "memory");
+            case "calculator_memory_edit" -> Json.object(
+                    "op", "memory_edit",
+                    "action", arguments.get("action"),
+                    "index", arguments.get("index"));
             case "calculator_capabilities" -> Json.object("op", "capabilities");
             case "calculator_report_issue" -> Json.object(
                     "op", "report_issue",
@@ -168,6 +172,17 @@ public final class CalculatorTools {
         tools.add(tool("calculator_memory",
                 "Read the memorized values, newest first.",
                 schema(Json.object(), List.of())));
+
+        tools.add(tool("calculator_memory_edit",
+                "Add, subtract, load or clear one memorized slot. MS stores a new slot; index counts "
+                        + "from the newest memorized value.",
+                schema(Json.object(
+                        "action", Json.object(
+                                "type", "string",
+                                "description", "add, subtract, load or clear",
+                                "enum", List.of("add", "subtract", "load", "clear")),
+                        "index", integerProperty("Slot to edit, counting from 0 at the newest (default 0).")),
+                        List.of("action"))));
 
         tools.add(tool("calculator_capabilities",
                 "Discover the version, modes, conversion categories, operations and every token.",

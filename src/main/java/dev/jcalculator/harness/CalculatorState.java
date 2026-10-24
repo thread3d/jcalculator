@@ -20,6 +20,8 @@ import java.util.List;
  * @param expression   the expression line
  * @param error        whether the calculator is in its error state
  * @param errorMessage the error text, or {@code null}
+ * @param parenthesisCount how many parentheses the expression still has open
+ * @param signal       the last non-error signal the engine raised, or {@code null}
  * @param radix        the programmer base (2, 8, 10 or 16)
  * @param width        the programmer word width
  * @param angleType    the trigonometric angle unit
@@ -33,6 +35,8 @@ public record CalculatorState(
         String expression,
         boolean error,
         String errorMessage,
+        int parenthesisCount,
+        String signal,
         int radix,
         NumberWidth width,
         AngleType angleType,

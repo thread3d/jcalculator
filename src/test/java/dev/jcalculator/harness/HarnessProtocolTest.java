@@ -181,4 +181,34 @@ class HarnessProtocolTest {
         assertEquals("STANDARD", state.response().get("mode"));
         assertEquals(10, state.response().get("radix"));
     }
+
+    @Test
+    void stateReportsTheParenthesisDepth() {
+        protocol.execute(Json.object("op", "mode", "mode", "scientific"));
+        protocol.handleLine("( 1");
+        final HarnessProtocol.Outcome state = protocol.execute(Json.object("op", "state"));
+        assertEquals(1, state.response().get("parenthesis"));
+        assertNull(state.response().get("signal"));
+    }
+
+    @Test
+    void memoryEditAdjustsOneSlot() {
+        protocol.handleLine("5 ms");
+        protocol.handleLine("clear");
+        protocol.handleLine("3");
+        final HarnessProtocol.Outcome outcome = protocol.execute(
+                Json.object("op", "memory_edit", "action", "add", "index", 0));
+        assertEquals(Boolean.TRUE, outcome.response().get("ok"));
+        assertEquals(List.of("8"), outcome.response().get("memory"));
+        assertEquals("memory_changed", outcome.response().get("signal"));
+    }
+
+    @Test
+    void memoryEditRefusesASlotThatDoesNotExist() {
+        final HarnessProtocol.Outcome outcome = protocol.execute(
+                Json.object("op", "memory_edit", "action", "load", "index", 2));
+        assertEquals(Boolean.FALSE, outcome.response().get("ok"));
+        assertEquals("bad_request", outcome.response().get("errorCode"));
+        assertTrue(((String) outcome.response().get("message")).contains("index 2"));
+    }
 }

@@ -10,12 +10,12 @@ package dev.jcalculator.app;
 public final class AppInfo {
 
     public static final String NAME = "jCalculator";
-    public static final String VERSION = "1.3.0";
+    public static final String VERSION = "2.0.0";
 
     private AppInfo() {
     }
 
-    /** {@code jCalculator 1.3.0}, the form used by the command-line banner. */
+    /** {@code jCalculator 2.0.0}, the form used by the command-line banner. */
     public static String displayVersion() {
         return NAME + " " + VERSION;
     }

@@ -4,6 +4,64 @@ All notable changes to jCalculator are recorded here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-10-24
+
+A major bump because the restructuring changes shapes outside the model: `CalcEngine.EngineListener`
+takes expression tokens instead of a rendered string, `CalculatorState` gains two components, and the
+JSON protocol gains two fields and an operation. A caller that implemented the listener or read the
+state record has to be updated, so this is not a compatible minor release. The calculator's
+behaviour is unchanged, and no requirement was renumbered.
+
+The internals now mirror the original's own decomposition. The single 1,338-line `CalcEngine` was
+split along the seams the original uses, the engine reports through the original's display interface
+instead of handing a view a pre-rendered string, failures carry named codes, and the memory keys act
+on individual slots. Four requirements describe the result: R-030 (display protocol), R-031 (error
+codes), R-032 (the expression line as a token stream) and R-033 (per-slot memory).
+
+### Added
+
+- `EngineError` and `CalculationException`: the failures the engine can raise are named
+  (`divide_by_zero`, `undefined`, `overflow`, `domain`, `invalid_range`) and mapped to the display
+  text the calculator has always shown, mirroring `CalcErr.h`. `CalcEngine.error()` and
+  `errorCode()` expose them; `CalcEngine.ERROR_*` remain as aliases.
+- `ExpressionToken` and a token-based `ExpressionBuilder`: every part of the expression line keeps the
+  command that produced it, and the completed equation stays on the line until the next key.
+- The engine listener now matches the original's `ICalcDisplay`: `onExpression(tokens)`,
+  `onParenthesisCount`, `onNoRightParen`, `onBinaryOperatorReceived`, `onMaxDigitsReached`,
+  `onHistoryEntry` and `onDisplay`. `CalculatorManager` implements them and exposes
+  `parenthesisCount()` and `lastSignal()`.
+- `CalculatorState.parenthesisCount` and `CalculatorState.signal`, and the JSON protocol's
+  `parenthesis` and `signal` fields, so an automation surface can read the bracket depth and tell
+  whether the calculator complained without treating it as an error.
+- Requirement R-033 and per-slot memory: `CalculatorManager.memorizedNumberAdd/Subtract/Load/Clear`
+  follow the original's memory functions (select the slot into the engine, run the command, copy the
+  result back), including the empty-list cases where `M+` stores the displayed value and `M-` stores
+  its negation. Every change to the list raises the `memory_changed` signal, and a recall raises
+  `input_changed`. The protocol gains `memory_edit` and the MCP server gains `calculator_memory_edit`
+  (fifteen tools).
+
+### Changed
+
+- `CalcEngine` (1,338 lines) is split along the original's seams: `OperatorPrecedence`
+  (`scioper.cpp`), `UnaryFunctions` (`scifunc.cpp`), `DisplayFormatter` (`scidisp.cpp`) and
+  `BitMath` (`basex.cpp`/`logic.cpp`). The engine keeps the state machine and the operations that
+  need pending-operation state (`%`, `NOT`, the rotations).
+- `ExpressionBuilder` builds tokens rather than a pre-rendered string, so `ExpressionToken.render` is
+  the one place that decides spacing.
+
+### Fixed
+
+- Replacing a pending operator with one that binds more tightly no longer leaves the replaced
+  operator inside the brackets: `1 × 2 +` followed by `^` now reads `(1 × 2) ^` instead of
+  `(1 × 2 +) ^`. The partial result the engine computed is what the brackets enclose.
+- Clearing after an error now clears the engine's error code as well as its text.
+
+### Tests
+
+- `EngineProtocolTest` (10 tests), 4 new `CalculatorManagerTest` cases and 3 new
+  `HarnessProtocolTest` cases: **210 tests** in 20 classes, all passing. jcheck `strict` reports
+  0 errors and 0 warnings.
+
 ## [1.3.0] - 2026-10-23
 
 The journal pays off. Every problem the 1.2.0 journal recorded (four entries, JC-C53044D9,

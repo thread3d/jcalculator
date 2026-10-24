@@ -47,7 +47,9 @@ public final class AutomationSurface {
             CalculatorMode mode,
             int radix,
             NumberWidth width,
-            AngleType angleType) {
+            AngleType angleType,
+            int parenthesisCount,
+            String signal) {
     }
 
     private final CalculatorSession session;
@@ -282,7 +284,8 @@ public final class AutomationSurface {
     }
 
     public Snapshot snapshot() {
-        return new Snapshot(display(), expression(), isError(), mode(), radix(), width(), angleType());
+        return new Snapshot(display(), expression(), isError(), mode(), radix(), width(), angleType(),
+                session.manager().parenthesisCount(), session.manager().lastSignal());
     }
 
     // ---- Helpers ---------------------------------------------------------------------------------

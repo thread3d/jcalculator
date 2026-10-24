@@ -113,11 +113,11 @@ class CalculatorManagerTest {
 
         calculator.recallMemory(1);
         assertEquals("5", calculator.primaryDisplay());
+        assertEquals(CalculatorManager.SIGNAL_INPUT_CHANGED, calculator.lastSignal());
     }
 
     @Test
-    void resetClearsEverything() {
-        final CalculatorManager calculator = new CalculatorManager();
+    void resetClearsEverything() {        final CalculatorManager calculator = new CalculatorManager();
         type(calculator, "5");
         calculator.sendCommand(Command.MEMORY_STORE);
         calculator.sendCommand(Command.CLEAR);
@@ -129,5 +129,71 @@ class CalculatorManagerTest {
         assertEquals("0", calculator.primaryDisplay());
         assertTrue(calculator.history().isEmpty());
         assertTrue(calculator.memorizedNumbers().isEmpty());
+    }
+
+    @Test
+    void memorySlotsAreAdjustedIndividually() {
+        final CalculatorManager calculator = new CalculatorManager();
+        type(calculator, "5");
+        calculator.sendCommand(Command.MEMORY_STORE);
+        calculator.sendCommand(Command.CLEAR);
+        type(calculator, "7");
+        calculator.sendCommand(Command.MEMORY_STORE);
+        calculator.sendCommand(Command.CLEAR);
+        type(calculator, "2");
+        assertEquals(List.of(Rational.of(7), Rational.of(5)), calculator.memorizedNumbers());
+
+        calculator.memorizedNumberAdd(1);
+        assertEquals(List.of(Rational.of(7), Rational.of(7)), calculator.memorizedNumbers());
+
+        calculator.memorizedNumberSubtract(1);
+        assertEquals(List.of(Rational.of(7), Rational.of(5)), calculator.memorizedNumbers());
+
+        calculator.memorizedNumberClear(0);
+        assertEquals(List.of(Rational.of(5)), calculator.memorizedNumbers());
+    }
+
+    @Test
+    void everyMemoryChangeRaisesTheMemorySignal() {
+        final CalculatorManager calculator = new CalculatorManager();
+        type(calculator, "5");
+        calculator.sendCommand(Command.MEMORY_STORE);
+        assertEquals(CalculatorManager.SIGNAL_MEMORY_CHANGED, calculator.lastSignal());
+
+        calculator.sendCommand(Command.MULTIPLY);
+        assertEquals(CalculatorManager.SIGNAL_BINARY_OPERATOR, calculator.lastSignal());
+
+        calculator.memorizedNumberAdd(0);
+        assertEquals(CalculatorManager.SIGNAL_MEMORY_CHANGED, calculator.lastSignal());
+
+        calculator.sendCommand(Command.MULTIPLY);
+        calculator.memorizedNumberClear(0);
+        assertEquals(CalculatorManager.SIGNAL_MEMORY_CHANGED, calculator.lastSignal());
+    }
+
+    @Test
+    void memoryAddWithNothingMemorizedStoresTheDisplayedValue() {
+        final CalculatorManager calculator = new CalculatorManager();
+        type(calculator, "4");
+        calculator.memorizedNumberAdd(0);
+        assertEquals(List.of(Rational.of(4)), calculator.memorizedNumbers());
+    }
+
+    @Test
+    void memorySubtractWithNothingMemorizedStoresTheNegatedValue() {
+        final CalculatorManager calculator = new CalculatorManager();
+        type(calculator, "4");
+        calculator.memorizedNumberSubtract(0);
+        assertEquals(List.of(Rational.of(-4)), calculator.memorizedNumbers());
+    }
+
+    @Test
+    void clearingASlotThatDoesNotExistIsHarmless() {
+        final CalculatorManager calculator = new CalculatorManager();
+        type(calculator, "5");
+        calculator.sendCommand(Command.MEMORY_STORE);
+
+        calculator.memorizedNumberClear(3);
+        assertEquals(List.of(Rational.of(5)), calculator.memorizedNumbers());
     }
 }

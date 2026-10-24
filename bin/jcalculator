@@ -1,0 +1,70 @@
+#!/bin/sh
+# Runs the jCalculator desktop window (Swing).
+#
+# Build the project first:  ./mvnw package
+# Examples:
+#   bin/jcalculator
+#   bin/jcalculator --help
+#
+# The script uses the packaged jar when one exists and falls back to target/classes.
+# On a machine without a display it exits with a pointer to bin/jcalculator-cli instead
+# of failing with a HeadlessException.
+set -eu
+
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+root=$(dirname "$here")
+
+usage() {
+    cat <<EOF
+Usage: bin/jcalculator
+
+Opens the jCalculator desktop window.
+
+Other front ends:
+  bin/jcalculator-cli       interactive text mode (2 + 3 "*" 4 =)
+  bin/jcalculator-harness   headless one-line JSON harness
+  bin/jcalculator-mcp       MCP server over stdin/stdout
+
+Build first with:  ./mvnw package
+EOF
+}
+
+case "${1:-}" in
+    -h | --help)
+        usage
+        exit 0
+        ;;
+    "")
+        ;;
+    *)
+        echo "jcalculator: the window takes no arguments (got: $*)" >&2
+        echo "Try 'bin/jcalculator --help' for the other front ends." >&2
+        exit 64
+        ;;
+esac
+
+# Keep the issue journal inside the project, whatever directory a caller starts us in.
+: "${JCALC_ISSUES:=$root/.jcalculator/issues.jsonl}"
+export JCALC_ISSUES
+
+jar=$(ls "$root"/target/jcalculator-*.jar 2>/dev/null | head -n 1 || true)
+if [ -n "${jar:-}" ]; then
+    classpath=$jar
+else
+    classpath=$root/target/classes
+fi
+
+if [ ! -e "$classpath" ]; then
+    echo "jcalculator: not built yet ($classpath is missing)" >&2
+    echo "Run './mvnw package' in $root first." >&2
+    exit 1
+fi
+
+# AWT has no display to draw on outside macOS unless one of these is set.
+if [ "$(uname -s)" != "Darwin" ] && [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+    echo "jcalculator: no display available (DISPLAY/WAYLAND_DISPLAY unset)" >&2
+    echo "Use 'bin/jcalculator-cli' for text mode instead." >&2
+    exit 1
+fi
+
+exec java -cp "$classpath" dev.jcalculator.app.CalculatorWindow
