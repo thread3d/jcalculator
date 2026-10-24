@@ -4,7 +4,7 @@ A Java implementation of the Windows Calculator application: the standard, scien
 programmer calculators, date calculation, unit conversion and currency conversion, with memory and
 history, exact rational arithmetic, a Swing desktop window and a text interface.
 
-**Version 2.1.0** — the verified calculator, with its engine internals restructured to mirror the
+**Version 2.2.0** — the verified calculator, with its engine internals restructured to mirror the
 original's own decomposition; see `CHANGELOG.md`.
 
 The original application in `../calculator-main` is a C#/C++ Universal Windows Platform app. Its
@@ -57,14 +57,14 @@ local repository in `.m2repo/`, so it works offline and inside a sandbox.
 
 ```bash
 ./mvnw test                 # compile and run the test suite
-./mvnw package              # build target/jcalculator-2.1.0.jar
+./mvnw package              # build target/jcalculator-2.2.0.jar
 
 java -cp target/classes dev.jcalculator.app.CalculatorWindow     # desktop window
 java -cp target/classes dev.jcalculator.app.CalculatorCli        # interactive text mode
 java -cp target/classes dev.jcalculator.harness.HarnessCli 2 + 3 # machine-readable one-shot
 java -cp target/classes dev.jcalculator.mcp.McpServer            # MCP server on stdio
 java -cp target/classes dev.jcalculator.app.CalculatorCli --version
-java -jar target/jcalculator-2.1.0.jar --version
+java -jar target/jcalculator-2.2.0.jar --version
 bin/jcalculator                                  # the desktop window via its launcher
 bin/jcalculator-harness 2 + 3 =                  # the same harness CLI via its launcher
 bin/jcalculator-cli 2 + 3 =                      # the text interface via its launcher
@@ -299,7 +299,7 @@ Ask a session to "fix the open issues", or work through them directly:
 ## Versioning
 
 jCalculator follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The current version
-is **2.1.0**; the release history is in `CHANGELOG.md`. A version change updates three places,
+is **2.2.0**; the release history is in `CHANGELOG.md`. A version change updates three places,
 which the build keeps in step:
 
 - `pom.xml` — the Maven project version, and therefore the jar name and manifest

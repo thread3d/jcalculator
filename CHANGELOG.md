@@ -4,7 +4,12 @@ All notable changes to jCalculator are recorded here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.2.0] - 2026-10-24
+
+A minor bump: the interfaces a caller uses — the JSON protocol, the MCP tools, the CLI exit codes
+and the window's automation accessors — are unchanged or additive. The one public shape that moved is
+`HistoryEntry`, which gained the button sequence and kept a two-argument constructor, so building an
+entry still compiles.
 
 The gaps between this port and the original's application shell are closed. The window is now the
 whole application — pages, menus, settings, clipboard, bit panel and graphing — rather than a single
