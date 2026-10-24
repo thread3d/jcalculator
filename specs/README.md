@@ -39,21 +39,25 @@ removed from the project after the run and kept in the run directory.
 
 ## Latest result
 
-Run `CW-2026-10-24-G4XJQ` (copy mode, not in place):
+Run `CW-2026-10-24-MQAN6` (copy mode, not in place):
 
 | Measure | Result |
 | --- | --- |
 | Overall | `VERIFIED` |
 | Requirements | 33 `VERIFIED`, 0 `PARTIALLY_VERIFIED`, 0 `FAILED`, 0 `UNVERIFIED`, 0 `BLOCKED` |
-| Existing tests | 212 executed, 212 passed |
+| Existing tests | 341 executed, 341 passed |
 | Scenario tests | 80 generated from `codewitness.yaml`, all passed |
 | Counterexamples | none |
 | Static analysis | 0 compiler findings; 12 medium heuristic findings |
-| Coverage | 74.4% line, 57.4% branch |
+| Coverage | 85.6% line, 72.3% branch |
 
 The JSON and HTML reports are in
-`.codewitness/runs/CW-2026-10-24-G4XJQ/report.json` and `report.html`. The run directory is
+`.codewitness/runs/CW-2026-10-24-MQAN6/report.json` and `report.html`. The run directory is
 git-ignored because it is generated evidence, not source.
+
+Coverage is measured over the sources the existing suite already builds; the untested remainder is
+mostly the Swing window's listeners, the `main` methods of the two launcher-style fronts (which exit
+the process), and the branch of `RationalMath.pow` that refuses an exponent above 100 000.
 
 ## The heuristic findings
 

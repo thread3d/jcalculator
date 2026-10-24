@@ -4,6 +4,32 @@ All notable changes to jCalculator are recorded here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+The test suite now covers the parts of the application it had never exercised. CodeWitness coverage
+rises from 74.4% line / 57.4% branch to **85.6% line / 72.3% branch**, and the suite from 212 to 341
+tests. Nothing the calculator does has changed, apart from one error-classification fix noted below.
+
+### Added
+
+- A command-line suite for the text interface (53 tests): every flag, every usage error, the issue
+  journal commands, the one-token interactive commands, and the interactive loop driven from a
+  scripted input stream.
+- Unit suites for the unary-function dispatch (16 tests), the mathematical core (23), the word
+  arithmetic behind programmer mode (5), the command table (5), operator precedence (3) and the
+  number formatter (9), plus the MCP transport's error paths (13) and the two record predicates
+  (`Unit.hasFactor`, `DateDifference.isDaysOnly`).
+- `CalculatorCli.run(List<String>)` returns the process exit code, and the interface takes the
+  streams it writes to and the input it reads, so its whole command line is exercisable in the
+  process that runs it. `main` is now a wrapper that exits with that code; the exit codes are
+  unchanged.
+
+### Fixed
+
+- A malformed date on the text interface's command line (`--date-diff not-a-date 2024-01-01`) is a
+  usage error answering `64`, not an internal failure answering `70`, and is no longer recorded in
+  the issue journal as a problem with the calculator.
+
 ## [2.0.0] - 2026-10-24
 
 A major bump because the restructuring changes shapes outside the model: `CalcEngine.EngineListener`

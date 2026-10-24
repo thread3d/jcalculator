@@ -21,7 +21,11 @@ import dev.jcalculator.manager.CalculatorManager;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -51,6 +55,9 @@ public final class CalculatorCli {
 
     private final CalculatorManager manager;
     private final IssueJournal journal;
+    private final PrintStream out;
+    private final PrintStream err;
+    private final InputStream in;
     private boolean running = true;
 
     public CalculatorCli(CalculatorMode mode) {
@@ -64,32 +71,104 @@ public final class CalculatorCli {
      * @param journal where problems met in the interface are recorded
      */
     public CalculatorCli(CalculatorMode mode, IssueJournal journal) {
+        this(mode, journal, System.out, System.err);
+    }
+
+    /**
+     * Creates the text interface writing to caller-supplied streams.
+     *
+     * <p>Tests use this to read what the interface printed without capturing the process's own
+     * standard output, exactly as {@code HarnessCli} takes its streams.
+     *
+     * @param mode    the calculator page to start on
+     * @param journal where problems met in the interface are recorded
+     * @param out     where ordinary output goes
+     * @param err     where refusals and errors go
+     */
+    public CalculatorCli(CalculatorMode mode, IssueJournal journal, PrintStream out, PrintStream err) {
+        this(mode, journal, out, err, System.in);
+    }
+
+    /**
+     * Creates the text interface over caller-supplied streams, for tests that script the input.
+     *
+     * @param mode    the calculator page to start on
+     * @param journal where problems met in the interface are recorded
+     * @param out     where ordinary output goes
+     * @param err     where refusals and errors go
+     * @param in      the interactive session's input
+     */
+    public CalculatorCli(CalculatorMode mode, IssueJournal journal, PrintStream out, PrintStream err,
+            InputStream in) {
         manager = new CalculatorManager(mode);
         this.journal = Objects.requireNonNull(journal, "journal");
+        this.out = Objects.requireNonNull(out, "out");
+        this.err = Objects.requireNonNull(err, "err");
+        this.in = Objects.requireNonNull(in, "in");
     }
 
     public static void main(String[] args) {
-        final CalculatorCli cli = new CalculatorCli(CalculatorMode.STANDARD);
-        final List<String> tokens = new ArrayList<>(List.of(args));
+        final int code = new CalculatorCli(CalculatorMode.STANDARD).run(List.of(args));
+        if (code != 0) {
+            System.exit(code);
+        }
+    }
+
+    /**
+     * Runs one command line and returns the process exit code instead of exiting.
+     *
+     * <p>The exit codes are the ones the executable documents: {@code 0} success, {@code 64} a usage
+     * error and {@code 70} an unexpected internal failure. The journal commands answer {@code 1} when
+     * the journal is disabled, cannot be written, or does not hold the issue being resolved. Keeping
+     * the decision here is what lets the tests exercise every path in this process.
+     *
+     * @param args the command line, without the program name
+     */
+    public int run(List<String> args) {
         try {
-            if (tokens.isEmpty()) {
-                cli.interactive();
-                return;
+            if (args.isEmpty()) {
+                interactive();
+                return 0;
             }
-            switch (tokens.get(0)) {
-                case "--version", "-V" -> System.out.println(AppInfo.displayVersion());
-                case "--help", "-h" -> printHelp();
-                case "--issues" -> cli.printIssues(tokens.subList(1, tokens.size()));
-                case "--report" -> cli.printReport(tokens.subList(1, tokens.size()));
-                case "--resolve" -> cli.printResolve(tokens.subList(1, tokens.size()));
-                default -> cli.runTokens(tokens);
+            switch (args.get(0)) {
+                case "--version", "-V" -> {
+                    out.println(AppInfo.displayVersion());
+                    return 0;
+                }
+                case "--help", "-h" -> {
+                    printHelp();
+                    return 0;
+                }
+                case "--issues" -> {
+                    printIssues(args.subList(1, args.size()));
+                    return 0;
+                }
+                case "--report" -> {
+                    return printReport(args.subList(1, args.size()));
+                }
+                case "--resolve" -> {
+                    return printResolve(args.subList(1, args.size()));
+                }
+                default -> {
+                    runTokens(args);
+                    return 0;
+                }
             }
+        } catch (UsageException exception) {
+            err.println("jcalculator: " + exception.getMessage());
+            return 64;
         } catch (IllegalArgumentException exception) {
-            fail(exception.getMessage());
+            err.println("jcalculator: " + exception.getMessage());
+            return 64;
+        } catch (DateTimeException exception) {
+            // A date the caller mistyped is a usage error, not a fault in the calculator, so it must
+            // not be recorded in the issue journal as an unexpected failure.
+            err.println("jcalculator: " + exception.getMessage());
+            return 64;
         } catch (RuntimeException exception) {
-            cli.recordInternalFailure(exception);
-            System.err.println("jcalculator: internal error: " + exception.getMessage());
-            System.exit(70);
+            recordInternalFailure(exception);
+            err.println("jcalculator: internal error: " + exception.getMessage());
+            return 70;
         }
     }
 
@@ -111,7 +190,7 @@ public final class CalculatorCli {
                     if (index + 4 >= tokens.size()) {
                         fail("--convert needs <category> <from> <to> <value>");
                     }
-                    System.out.println(convert(tokens.get(index + 1), tokens.get(index + 2),
+                    out.println(convert(tokens.get(index + 1), tokens.get(index + 2),
                             tokens.get(index + 3), tokens.get(index + 4)));
                     index += 5;
                 }
@@ -119,14 +198,14 @@ public final class CalculatorCli {
                     if (index + 2 >= tokens.size()) {
                         fail("--date-diff needs <from-date> <to-date>");
                     }
-                    System.out.println(dateDifference(tokens.get(index + 1), tokens.get(index + 2)));
+                    out.println(dateDifference(tokens.get(index + 1), tokens.get(index + 2)));
                     index += 3;
                 }
                 case "--date-add" -> {
                     if (index + 4 >= tokens.size()) {
                         fail("--date-add needs <date> <years> <months> <days>");
                     }
-                    System.out.println(dateAdd(tokens.get(index + 1), tokens.get(index + 2),
+                    out.println(dateAdd(tokens.get(index + 1), tokens.get(index + 2),
                             tokens.get(index + 3), tokens.get(index + 4), true));
                     index += 5;
                 }
@@ -134,7 +213,7 @@ public final class CalculatorCli {
                     if (index + 4 >= tokens.size()) {
                         fail("--date-subtract needs <date> <years> <months> <days>");
                     }
-                    System.out.println(dateAdd(tokens.get(index + 1), tokens.get(index + 2),
+                    out.println(dateAdd(tokens.get(index + 1), tokens.get(index + 2),
                             tokens.get(index + 3), tokens.get(index + 4), false));
                     index += 5;
                 }
@@ -146,13 +225,22 @@ public final class CalculatorCli {
             }
         }
         if (calculatorCommandsUsed) {
-            System.out.println(manager.primaryDisplay());
+            out.println(manager.primaryDisplay());
+        }
+    }
+
+    /** Signals a usage error; {@link #run} turns it into exit code 64. */
+    private static final class UsageException extends RuntimeException {
+
+        private static final long serialVersionUID = 1L;
+
+        UsageException(String message) {
+            super(message);
         }
     }
 
     private static void fail(String message) {
-        System.err.println("jcalculator: " + message);
-        System.exit(64);
+        throw new UsageException(message);
     }
 
     // ---- Issue journal commands ---------------------------------------------------------------------
@@ -178,7 +266,7 @@ public final class CalculatorCli {
             }
         }
         if (!journal.isEnabled()) {
-            System.out.println("The issue journal is disabled.");
+            out.println("The issue journal is disabled.");
             return;
         }
         final IssueJournal.Snapshot snapshot = journal.read();
@@ -192,28 +280,28 @@ public final class CalculatorCli {
             }
         }
         if (selected.isEmpty()) {
-            System.out.println(all ? "No recorded issues." : "No open issues.");
+            out.println(all ? "No recorded issues." : "No open issues.");
         }
         for (Issue issue : selected) {
-            System.out.println(issue.id() + "  " + issue.status().wireName() + "  "
+            out.println(issue.id() + "  " + issue.status().wireName() + "  "
                     + issue.severity().wireName() + "  [" + String.join(",", issue.surfaces()) + "]  "
                     + issue.occurrences() + "x  " + issue.summary());
             final String detail = firstLine(issue.detail());
             if (!detail.isBlank()) {
-                System.out.println("    " + detail);
+                out.println("    " + detail);
             }
             if (issue.resolution() != null) {
                 final Issue.Resolution resolution = issue.resolution();
-                System.out.println("    " + resolution.disposition().wireName()
+                out.println("    " + resolution.disposition().wireName()
                         + (resolution.note().isBlank() ? "" : ": " + resolution.note())
                         + " (" + resolution.resolvedAt() + ")");
             }
         }
-        System.out.println("Journal: " + journal.location() + " — " + snapshot.openCount()
+        out.println("Journal: " + journal.location() + " — " + snapshot.openCount()
                 + " open, " + snapshot.resolvedCount() + " resolved");
     }
 
-    private void printReport(List<String> options) {
+    private int printReport(List<String> options) {
         String summary = null;
         String detail = "";
         IssueSeverity severity = IssueSeverity.MEDIUM;
@@ -247,22 +335,23 @@ public final class CalculatorCli {
             fail("--report needs a summary");
         }
         if (!journal.isEnabled()) {
-            System.err.println("jcalculator: the issue journal is disabled; set "
+            err.println("jcalculator: the issue journal is disabled; set "
                     + IssueJournal.PATH_PROPERTY + " or " + IssueJournal.PATH_ENVIRONMENT);
-            System.exit(1);
+            return 1;
         }
         final String issueId = journal.record(new IssueDraft(
                 IssueKind.USER_REPORT, severity, IssueSurface.CLI, summary, detail, Map.of()));
         if (journal.find(issueId).isEmpty()) {
-            System.err.println("jcalculator: the issue journal could not be written: " + journal.location());
-            System.exit(1);
+            err.println("jcalculator: the issue journal could not be written: " + journal.location());
+            return 1;
         }
         final IssueJournal.Snapshot snapshot = journal.read();
-        System.out.println("Recorded " + issueId + " — " + snapshot.openCount() + " open issue(s) in "
+        out.println("Recorded " + issueId + " — " + snapshot.openCount() + " open issue(s) in "
                 + journal.location());
+        return 0;
     }
 
-    private void printResolve(List<String> options) {
+    private int printResolve(List<String> options) {
         String id = null;
         String note = "";
         IssueDisposition disposition = IssueDisposition.FIXED;
@@ -293,13 +382,14 @@ public final class CalculatorCli {
             fail("--resolve needs an issue id");
         }
         if (!journal.resolve(id, disposition, note)) {
-            System.err.println("jcalculator: no issue with id " + id);
-            System.exit(1);
+            err.println("jcalculator: no issue with id " + id);
+            return 1;
         }
         final IssueDisposition resolvedAs = disposition;
         final String issueId = id;
-        journal.find(issueId).ifPresent(issue -> System.out.println("Resolved " + issue.id() + " as "
+        journal.find(issueId).ifPresent(issue -> out.println("Resolved " + issue.id() + " as "
                 + resolvedAs.wireName() + ": " + issue.summary()));
+        return 0;
     }
 
     private static int parseLimit(String text) {
@@ -339,11 +429,11 @@ public final class CalculatorCli {
     // ---- Interactive ----------------------------------------------------------------------------
 
     private void interactive() {
-        System.out.println(AppInfo.displayVersion() + " - a Java calculator");
-        System.out.println("Mode: " + manager.mode() + ". Type 'help' for commands, 'quit' to exit.");
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
+        out.println(AppInfo.displayVersion() + " - a Java calculator");
+        out.println("Mode: " + manager.mode() + ". Type 'help' for commands, 'quit' to exit.");
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
             while (running) {
-                System.out.print(prompt());
+                out.print(prompt());
                 final String line = reader.readLine();
                 if (line == null) {
                     break;
@@ -358,11 +448,11 @@ public final class CalculatorCli {
                     }
                 }
                 if (!manager.isError()) {
-                    System.out.println(manager.primaryDisplay());
+                    out.println(manager.primaryDisplay());
                 }
             }
         } catch (IOException exception) {
-            System.err.println("input error: " + exception.getMessage());
+            err.println("input error: " + exception.getMessage());
         }
     }
 
@@ -386,21 +476,21 @@ public final class CalculatorCli {
                 return true;
             }
             case "version" -> {
-                System.out.println(AppInfo.displayVersion());
+                out.println(AppInfo.displayVersion());
                 return true;
             }
             case "history" -> {
                 for (HistoryEntry entry : manager.history()) {
-                    System.out.println(entry.expression() + " " + entry.result());
+                    out.println(entry.expression() + " " + entry.result());
                 }
                 return true;
             }
             case "memory" -> {
-                System.out.println(manager.memorizedNumbers());
+                out.println(manager.memorizedNumbers());
                 return true;
             }
             case "mode" -> {
-                System.out.println(manager.mode());
+                out.println(manager.mode());
                 return true;
             }
             case "standard", "scientific", "programmer" -> {
@@ -459,7 +549,7 @@ public final class CalculatorCli {
         final Command command = Tokens.commandFor(normalized, manager.mode());
         if (command == null) {
             recordUnknownToken(token);
-            System.err.println(Tokens.refusalMessage(token, manager.mode()));
+            err.println(Tokens.refusalMessage(token, manager.mode()));
             return false;
         }
         press(command);
@@ -469,7 +559,7 @@ public final class CalculatorCli {
     private void press(Command command) {
         manager.sendCommand(command);
         if (manager.isError()) {
-            System.out.println(manager.primaryDisplay());
+            out.println(manager.primaryDisplay());
         }
     }
 
@@ -530,8 +620,8 @@ public final class CalculatorCli {
         return String.join(" ", parts);
     }
 
-    private static void printHelp() {
-        System.out.println("""
+    private void printHelp() {
+        out.println("""
                 Tokens are calculator buttons, entered in order:
                   digits 0-9 and A-F      operators + - * / ^ mod and or xor nand nor lsh rsh
                   =  (  )  .  exp  +/-    clear  ce  back

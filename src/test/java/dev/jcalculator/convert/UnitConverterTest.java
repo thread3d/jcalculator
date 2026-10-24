@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -91,6 +92,17 @@ class UnitConverterTest {
     void tinyValuesUseScientificNotation() {
         final BigDecimal value = new BigDecimal("1.234e-16");
         assertEquals("1.234000e-16", converter.formatResult(value, 1, false));
+    }
+
+    @Test
+    void aUnitKnowsWhetherItConvertsByAFactor() {
+        final Unit metre = new Unit(1, UnitCategory.LENGTH, "Metre", "m", BigDecimal.ONE);
+        assertTrue(metre.hasFactor());
+        assertEquals(UnitCategory.LENGTH, metre.category());
+        assertEquals("m", metre.abbreviation());
+
+        final Unit celsius = new Unit(2, UnitCategory.TEMPERATURE, "Celsius", "C", null);
+        assertFalse(celsius.hasFactor());
     }
 
     @Test

@@ -5,7 +5,9 @@ import org.junit.jupiter.api.Test;
 import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DateCalculationEngineTest {
 
@@ -83,5 +85,14 @@ class DateCalculationEngineTest {
         final LocalDate date = LocalDate.of(2024, 6, 15);
         assertEquals(date, engine.addDuration(date, new DateDifference(0, 0, 0, 0)));
         assertEquals(date, engine.subtractDuration(date, new DateDifference(0, 0, 0, 0)));
+    }
+
+    @Test
+    void aDifferenceIsDaysOnlyWhenItCarriesNoLargerUnit() {
+        assertTrue(new DateDifference(0, 0, 0, 5).isDaysOnly());
+        assertTrue(new DateDifference(0, 0, 0, 0).isDaysOnly());
+        assertFalse(new DateDifference(1, 0, 0, 5).isDaysOnly());
+        assertFalse(new DateDifference(0, 2, 0, 5).isDaysOnly());
+        assertFalse(new DateDifference(0, 0, 3, 5).isDaysOnly());
     }
 }
