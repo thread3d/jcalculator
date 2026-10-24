@@ -1,6 +1,8 @@
 package dev.jcalculator.harness;
 
 import dev.jcalculator.engine.CalculatorMode;
+import dev.jcalculator.engine.Command;
+import dev.jcalculator.engine.HistoryEntry;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -106,5 +108,40 @@ class CalculatorSessionTest {
         assertEquals("5", snapshot.display());
         assertEquals(1, snapshot.history().size());
         assertNotNull(snapshot.mode());
+    }
+
+    @Test
+    void aHistoryEntryKeepsTheButtonsThatProducedIt() {
+        final CalculatorSession session = new CalculatorSession(CalculatorMode.STANDARD, 0L);
+        session.pressExpression("2 + 3 =");
+
+        final HistoryEntry entry = session.state().history().get(0);
+        assertTrue(entry.isReplayable());
+        assertEquals(List.of(Command.TWO, Command.ADD, Command.THREE, Command.EQUALS),
+                entry.commands());
+    }
+
+    @Test
+    void aHistoryEntryCanBeReRun() {
+        final CalculatorSession session = new CalculatorSession(CalculatorMode.STANDARD, 0L);
+        session.pressExpression("2 + 3 =");
+        final HistoryEntry entry = session.state().history().get(0);
+
+        session.press("clear");
+        assertEquals("0", session.state().display());
+
+        session.replay(entry);
+        assertEquals("5", session.state().display());
+        assertEquals("2 + 3=", session.state().expression());
+    }
+
+    @Test
+    void anEntryWithoutButtonsIsNotReplayableAndReplaysToNothing() {
+        final CalculatorSession session = new CalculatorSession(CalculatorMode.STANDARD, 0L);
+        final HistoryEntry bare = new HistoryEntry("9 + 1=", "10");
+
+        assertFalse(bare.isReplayable());
+        session.replay(bare);
+        assertEquals("0", session.state().display());
     }
 }

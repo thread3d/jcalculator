@@ -209,7 +209,8 @@ State persists between calls, and `--seed N` / `--mode MODE` set the initial ses
 The window is the application shell rather than a single keypad. Its **Pages** menu moves between the
 standard, scientific and programmer keypads and the **date**, **converter** and **graphing**
 workspaces; **View** carries the theme (light, dark or follow the system), an always-on-top switch, and
-the history and memory lists; **File** copies the display, pastes a number and clears; **Help** holds
+the history and memory lists (a history entry can be re-run, copied or cleared); **File** copies the
+display, pastes a number and clears; **Help** holds
 the about box and the shortcut list. The preferences are kept in `.jcalculator/settings.properties`
 (override with `jcalculator.settings.path`), so the theme, the window's always-on-top state and the
 last choice survive a restart.

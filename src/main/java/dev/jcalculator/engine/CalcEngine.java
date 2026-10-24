@@ -122,6 +122,8 @@ public final class CalcEngine {
     private EngineError engineError;
     private String errorMessage;
 
+    /** The buttons pressed since the last completed calculation, so a history entry can be re-run. */
+    private final List<Command> presses = new ArrayList<>();
     private int openParenCount;
     private final Rational[] parenValues = new Rational[MAX_PRECEDENCE_DEPTH];
     private final Command[] parenOps = new Command[MAX_PRECEDENCE_DEPTH];
@@ -322,6 +324,7 @@ public final class CalcEngine {
             parenOps[i] = null;
             precedenceOps[i] = null;
         }
+        presses.clear();
         expression.clearLine();
         expression.clearCompleted();
         notifyExpression();
@@ -334,6 +337,7 @@ public final class CalcEngine {
         if (command == Command.NONE) {
             return;
         }
+        presses.add(command);
         processCommandWorker(command);
     }
 
@@ -513,7 +517,7 @@ public final class CalcEngine {
                     if (!error) {
                         displayNum();
                         if (!mode.hasPrecedence()) {
-                            final HistoryEntry entry = expression.completeEquation(display());
+                            final HistoryEntry entry = completeEquation();
                             notifyHistory(entry);
                             expression.clearLine();
                             expression.addOperand(numberString);
@@ -605,7 +609,7 @@ public final class CalcEngine {
         }
 
         if (!error) {
-            final HistoryEntry entry = expression.completeEquation(display());
+            final HistoryEntry entry = completeEquation();
             notifyHistory(entry);
             notifyExpression();
             lastValue = currentValue;
@@ -785,6 +789,7 @@ public final class CalcEngine {
     }
 
     private void clearTemporaryValues() {
+        presses.clear();
         inverse = false;
         input.clear();
         record = true;
@@ -1146,6 +1151,13 @@ public final class CalcEngine {
         }
     }
 
+    /** Completes the equation with the buttons that produced it, then starts a new recording. */
+    private HistoryEntry completeEquation() {
+        final HistoryEntry entry = expression.completeEquation(display(), List.copyOf(presses));
+        presses.clear();
+        return entry;
+    }
+
     private void notifyHistory(HistoryEntry entry) {
         if (listener != null && entry != null) {
             listener.onHistoryEntry(entry);
@@ -1257,7 +1269,7 @@ public final class CalcEngine {
             if ((lastCommand.isUnary() || lastCommand == Command.NEGATE || lastCommand == Command.CLOSE_PAREN)
                     && openParenCount == 0) {
                 if (addToHistory) {
-                    final HistoryEntry entry = expression.completeEquation(display());
+                    final HistoryEntry entry = completeEquation();
                     notifyHistory(entry);
                     expression.clearLine();
                 }

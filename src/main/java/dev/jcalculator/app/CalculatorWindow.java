@@ -444,6 +444,16 @@ public final class CalculatorWindow extends JFrame {
                 }
             }
         });
+        final JButton load = new JButton("Load");
+        load.setName("history-load");
+        load.getAccessibleContext().setAccessibleName("Re-run the selected calculation");
+        load.addActionListener(event -> {
+            final int index = list.getSelectedIndex();
+            if (index >= 0 && index < entries.size()) {
+                surface.session().replay(entries.get(index));
+                calculatorPage.refresh();
+            }
+        });
         final JButton clear = new JButton("Clear all");
         clear.addActionListener(event -> {
             surface.session().manager().clearHistory();
@@ -452,6 +462,7 @@ public final class CalculatorWindow extends JFrame {
         });
         final JButton close = new JButton("Close");
         close.addActionListener(event -> frame.dispose());
+        buttons.add(load);
         buttons.add(copy);
         buttons.add(clear);
         buttons.add(close);

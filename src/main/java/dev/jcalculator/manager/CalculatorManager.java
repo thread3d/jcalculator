@@ -95,6 +95,20 @@ public final class CalculatorManager implements CalcEngine.EngineListener {
         }
     }
 
+    /**
+     * Re-runs a completed calculation by pressing the buttons that produced it.
+     *
+     * <p>An entry that was completed before the engine recorded buttons carries none, so replaying it
+     * does nothing rather than guessing.
+     *
+     * @param entry a history entry, as the history list shows it
+     */
+    public void replayHistory(HistoryEntry entry) {
+        for (Command command : entry.commands()) {
+            sendCommand(command);
+        }
+    }
+
     /** Types a sequence of commands, for scripted use. */
     public void sendCommands(Command... commands) {
         for (Command command : commands) {

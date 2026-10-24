@@ -30,8 +30,9 @@ keypad, and the specification grew five requirements (`R-034` … `R-038`) with 
   prefix call into keypad order, and `FunctionPlotter` samples it through the calculator engine, so a
   plot obeys the page's arithmetic, precedence and angle unit. Points the engine refuses are omitted
   so the curve shows the gap (`R-038`).
-- Interactive history and memory dialogs: the history can be copied from or cleared, and the memory
-  list offers the per-slot `M+`, `M−` and `MC` the original's memory panel has.
+- Interactive history and memory dialogs: a history entry keeps the buttons that produced it and can
+  be re-run, copied or cleared (`R-013`), and the memory list offers the per-slot `M+`, `M−` and `MC`
+  the original's memory panel has.
 
 ### Changed
 
@@ -45,7 +46,8 @@ keypad, and the specification grew five requirements (`R-034` … `R-038`) with 
 ### Tests
 
 - `SettingsStoreTest`, `ClipboardTextTest`, `FunctionPlotterTest` and `CalculatorWindowShellTest`, plus
-  cases in `ProgrammerCalculatorTest` and `UnitConverterTest`: **382 tests** in 32 classes.
+  cases in `ProgrammerCalculatorTest`, `UnitConverterTest` and `CalculatorSessionTest`: **385 tests**
+  in 32 classes.
 
 ## [2.1.0] - 2026-10-24
 

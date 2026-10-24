@@ -123,8 +123,18 @@ public final class ExpressionBuilder {
 
     /** Appends an equals sign and records the entry. */
     public HistoryEntry completeEquation(String result) {
+        return completeEquation(result, List.of());
+    }
+
+    /**
+     * Appends an equals sign and records the entry with the buttons behind it.
+     *
+     * @param result   the formatted result
+     * @param commands the buttons that produced it, which let the entry be re-run
+     */
+    public HistoryEntry completeEquation(String result, List<Command> commands) {
         final String expression = ExpressionToken.render(tokens) + "=";
-        final HistoryEntry entry = new HistoryEntry(expression, result);
+        final HistoryEntry entry = new HistoryEntry(expression, result, commands);
         completed.add(entry);
         lastCompletedExpression = expression;
         return entry;

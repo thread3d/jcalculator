@@ -145,6 +145,10 @@ newest-first and holds at most 20 entries per calculator mode. An intermediate o
 completed by pressing a later operator is recorded as its own entry, and the new calculation
 continues from its result.
 
+The entry also keeps the buttons that produced it, so the history can re-run a calculation rather
+than only describe it: choosing an entry presses the same keys again and reaches the same result. An
+entry that was recorded without its buttons says so and re-runs to nothing instead of guessing.
+
 # R-014 Modes keep independent state and histories
 
 Switching between standard, scientific and programmer modes clears the display and starts a fresh

@@ -7,6 +7,7 @@ import dev.jcalculator.date.DateDifference;
 import dev.jcalculator.date.DateUnit;
 import dev.jcalculator.engine.CalculatorMode;
 import dev.jcalculator.engine.Command;
+import dev.jcalculator.engine.HistoryEntry;
 import dev.jcalculator.manager.CalculatorManager;
 
 import java.time.LocalDate;
@@ -108,6 +109,11 @@ public final class CalculatorSession {
     /** Switches calculator page. */
     public void setMode(CalculatorMode mode) {
         manager.setMode(Objects.requireNonNull(mode, "mode"));
+    }
+
+    /** Re-runs a completed calculation, pressing the buttons that produced it. */
+    public void replay(HistoryEntry entry) {
+        manager.replayHistory(Objects.requireNonNull(entry, "entry"));
     }
 
     /** Clears the display, memory and every mode's history. */
