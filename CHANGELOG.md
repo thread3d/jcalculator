@@ -24,15 +24,21 @@ from the sources in `calculator-main` and comparing 660 displayed values at each
 - `ln` and `log10` snap a result below the working precision of its input to zero, as the original's
   `lograt` does, so a logarithm of a value a hair away from one reads `0` rather than an artefact of
   the last guard digit (`R-020`).
+- A computed value is kept at the display precision plus `GUARD_DIGITS` rather than being rounded
+  down to the display precision. The original does the same — its `sin(30°)` is
+  `0.49999999999999999999967…`, twenty-one correct digits at precision sixteen — and that is why a
+  chain such as `ln(exp(1))` reads `1` on both sides instead of `0.9999999999999999` (`R-020`).
+- The display rounds a value once. It used to round to two spare digits and then round again, which
+  carried twice on a tail like `…849` and showed a last digit one too high; the spare digits are now
+  truncated, as the original's `stripzeroesnum` truncates them (`R-020`).
 
 ### Tests
 
 - Five `NumberFormatterTest` cases pin the field rules, and two scenarios carry them.
 
-Measured against the compiled original: at precision 16 the display now agrees on **658 of 660**
-values (99.7%, from 590), and at precision 32 on **659 of 660** (99.8%, from 596). The remaining
-three differ by one unit in the last displayed digit, from the port's `exp`/`ln` round-trip carried
-at 16 digits rather than from the display rule.
+Measured against the compiled original: the display now agrees on **660 of 660** values at both
+precision 16 and precision 32 — every displayed string identical, from 590 and 596 before the field
+rules and the working digits were brought in line.
 
 ## [2.2.0] - 2026-10-24
 

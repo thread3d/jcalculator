@@ -75,7 +75,7 @@ public final class RationalMath {
         }
         final MathContext context = context(precision);
         final BigDecimal product = exponent.toBigDecimal(context).multiply(ln(base.toBigDecimal(context), context), context);
-        return rational(exp(product, context), precision);
+        return rational(exp(product, context), workingDigits(precision));
     }
 
     /** The {@code y}-th root of {@code value}, with odd roots of negative numbers defined. */
@@ -97,7 +97,7 @@ public final class RationalMath {
         }
         final MathContext context = context(precision);
         final BigDecimal logarithm = ln(value.toBigDecimal(context), context).divide(degree.toBigDecimal(context), context);
-        return rational(exp(logarithm, context), precision);
+        return rational(exp(logarithm, context), workingDigits(precision));
     }
 
     public static Rational integerRoot(Rational value, int degree, int precision) {
@@ -130,17 +130,17 @@ public final class RationalMath {
                     .add(magnitude.divide(powered, context), context)
                     .divide(BigDecimal.valueOf(degree), context);
             if (previous != null && next.compareTo(previous) == 0) {
-                return rational(next, precision);
+                return rational(next, workingDigits(precision));
             }
             previous = guess;
             guess = next;
         }
-        return rational(guess, precision);
+        return rational(guess, workingDigits(precision));
     }
 
     public static Rational exp(Rational value, int precision) {
         final MathContext context = context(precision);
-        return rational(exp(value.toBigDecimal(context), context), precision);
+        return rational(exp(value.toBigDecimal(context), context), workingDigits(precision));
     }
 
     public static Rational ln(Rational value, int precision) {
@@ -148,7 +148,7 @@ public final class RationalMath {
             throw new ArithmeticException("logarithm of a non-positive number");
         }
         final MathContext context = context(precision);
-        return rational(snapToZero(ln(value.toBigDecimal(context), context), value, precision), precision);
+        return rational(snapToZero(ln(value.toBigDecimal(context), context), value, precision), workingDigits(precision));
     }
 
     public static Rational log10(Rational value, int precision) {
@@ -158,17 +158,17 @@ public final class RationalMath {
         final MathContext context = context(precision);
         final BigDecimal logged =
                 snapToZero(ln(value.toBigDecimal(context), context), value, precision);
-        return rational(logged.divide(LN_10, context), precision);
+        return rational(logged.divide(LN_10, context), workingDigits(precision));
     }
 
     public static Rational sin(Rational value, AngleType angleType, int precision) {
         final MathContext context = context(precision);
-        return rational(snapToZero(sin(toRadians(value, angleType, context), context), precision), precision);
+        return rational(snapToZero(sin(toRadians(value, angleType, context), context), precision), workingDigits(precision));
     }
 
     public static Rational cos(Rational value, AngleType angleType, int precision) {
         final MathContext context = context(precision);
-        return rational(snapToZero(cos(toRadians(value, angleType, context), context), precision), precision);
+        return rational(snapToZero(cos(toRadians(value, angleType, context), context), precision), workingDigits(precision));
     }
 
     public static Rational tan(Rational value, AngleType angleType, int precision) {
@@ -178,7 +178,7 @@ public final class RationalMath {
         if (cosine.abs().compareTo(BigDecimal.ONE.scaleByPowerOfTen(-(precision + GUARD_DIGITS - 2))) < 0) {
             throw new ArithmeticException("tangent is undefined at this angle");
         }
-        return rational(snapToZero(sin(radians, context).divide(cosine, context), precision), precision);
+        return rational(snapToZero(sin(radians, context).divide(cosine, context), precision), workingDigits(precision));
     }
 
     public static Rational asin(Rational value, AngleType angleType, int precision) {
@@ -187,7 +187,7 @@ public final class RationalMath {
         }
         final MathContext context = context(precision);
         final BigDecimal radians = asin(value.toBigDecimal(context), context);
-        return rational(fromRadians(radians, angleType), precision);
+        return rational(fromRadians(radians, angleType), workingDigits(precision));
     }
 
     public static Rational acos(Rational value, AngleType angleType, int precision) {
@@ -196,13 +196,13 @@ public final class RationalMath {
         }
         final MathContext context = context(precision);
         final BigDecimal radians = PI.divide(BigDecimal.valueOf(2), context).subtract(asin(value.toBigDecimal(context), context));
-        return rational(fromRadians(radians, angleType), precision);
+        return rational(fromRadians(radians, angleType), workingDigits(precision));
     }
 
     public static Rational atan(Rational value, AngleType angleType, int precision) {
         final MathContext context = context(precision);
         final BigDecimal radians = atan(value.toBigDecimal(context), context);
-        return rational(fromRadians(radians, angleType), precision);
+        return rational(fromRadians(radians, angleType), workingDigits(precision));
     }
 
     public static Rational sinh(Rational value, int precision) {
@@ -210,7 +210,7 @@ public final class RationalMath {
         final BigDecimal x = value.toBigDecimal(context);
         final BigDecimal positive = exp(x, context);
         final BigDecimal negative = exp(x.negate(), context);
-        return rational(positive.subtract(negative, context).divide(BigDecimal.valueOf(2), context), precision);
+        return rational(positive.subtract(negative, context).divide(BigDecimal.valueOf(2), context), workingDigits(precision));
     }
 
     public static Rational cosh(Rational value, int precision) {
@@ -218,19 +218,19 @@ public final class RationalMath {
         final BigDecimal x = value.toBigDecimal(context);
         final BigDecimal positive = exp(x, context);
         final BigDecimal negative = exp(x.negate(), context);
-        return rational(positive.add(negative, context).divide(BigDecimal.valueOf(2), context), precision);
+        return rational(positive.add(negative, context).divide(BigDecimal.valueOf(2), context), workingDigits(precision));
     }
 
     public static Rational tanh(Rational value, int precision) {
         final MathContext context = context(precision);
-        return rational(tanh(value.toBigDecimal(context), context), precision);
+        return rational(tanh(value.toBigDecimal(context), context), workingDigits(precision));
     }
 
     public static Rational asinh(Rational value, int precision) {
         final MathContext context = context(precision);
         final BigDecimal x = value.toBigDecimal(context);
         final BigDecimal root = x.multiply(x, context).add(BigDecimal.ONE, context).sqrt(context);
-        return rational(ln(x.add(root, context), context), precision);
+        return rational(ln(x.add(root, context), context), workingDigits(precision));
     }
 
     public static Rational acosh(Rational value, int precision) {
@@ -240,7 +240,7 @@ public final class RationalMath {
         final MathContext context = context(precision);
         final BigDecimal x = value.toBigDecimal(context);
         final BigDecimal root = x.multiply(x, context).subtract(BigDecimal.ONE, context).sqrt(context);
-        return rational(ln(x.add(root, context), context), precision);
+        return rational(ln(x.add(root, context), context), workingDigits(precision));
     }
 
     public static Rational atanh(Rational value, int precision) {
@@ -250,7 +250,7 @@ public final class RationalMath {
         final MathContext context = context(precision);
         final BigDecimal x = value.toBigDecimal(context);
         final BigDecimal ratio = BigDecimal.ONE.add(x, context).divide(BigDecimal.ONE.subtract(x, context), context);
-        return rational(ln(ratio, context).divide(BigDecimal.valueOf(2), context), precision);
+        return rational(ln(ratio, context).divide(BigDecimal.valueOf(2), context), workingDigits(precision));
     }
 
     /** {@code value!} for a non-negative integer. */
@@ -502,6 +502,20 @@ public final class RationalMath {
     private static BigDecimal snapToZero(BigDecimal value, int precision) {
         final BigDecimal threshold = BigDecimal.ONE.scaleByPowerOfTen(-(precision + 2));
         return value.abs().compareTo(threshold) < 0 ? BigDecimal.ZERO : value;
+    }
+
+    /**
+     * The digits a computed value is kept at.
+     *
+     * <p>The original does not round a transcendental result down to the display precision: at
+     * precision sixteen its {@code sin(30°)} is {@code 0.49999999999999999999967…}, twenty-one
+     * correct digits, and {@code ln(exp(1))} comes back as {@code 1} rather than {@code 0.9999…}
+     * because the intermediate value carried those digits. The port keeps the same working digits
+     * so a chain of functions stays as close to the original as a single call does; the display
+     * rounds to {@code precision} regardless.
+     */
+    private static int workingDigits(int precision) {
+        return Math.max(1, precision) + GUARD_DIGITS;
     }
 
     private static Rational rational(BigDecimal value, int precision) {

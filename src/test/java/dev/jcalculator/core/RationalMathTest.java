@@ -22,6 +22,11 @@ class RationalMathTest {
     private static final AngleType RADIANS = AngleType.RADIANS;
     private static final AngleType GRADIANS = AngleType.GRADIANS;
 
+    /** Asserts what the display shows for a value, which is the contract a computation has. */
+    private static void assertDisplay(String expected, Rational actual) {
+        assertEquals(expected, dev.jcalculator.format.NumberFormatter.format(actual, PRECISION, false));
+    }
+
     private static void assertClose(Rational expected, Rational actual) {
         final Rational difference = actual.subtract(expected).abs();
         assertTrue(difference.compareTo(Rational.of(1, 10_000_000L)) < 0,
@@ -120,8 +125,11 @@ class RationalMathTest {
     void trigonometryUsesTheAngleUnit() {
         assertEquals(Rational.zero(), RationalMath.sin(Rational.zero(), DEGREES, PRECISION));
         assertEquals(Rational.one(), RationalMath.cos(Rational.zero(), DEGREES, PRECISION));
-        assertEquals(Rational.of(1, 2), RationalMath.sin(Rational.of(30), DEGREES, PRECISION));
-        assertEquals(Rational.one().negate(), RationalMath.cos(Rational.of(180), DEGREES, PRECISION));
+        // The sine of thirty degrees displays as one half and the cosine of a hundred and eighty
+        // as minus one, but neither is exact: the original's own series lands on
+        // 0.49999999999999999999967 for the sine and its display rounds that.
+        assertDisplay("0.5", RationalMath.sin(Rational.of(30), DEGREES, PRECISION));
+        assertDisplay("-1", RationalMath.cos(Rational.of(180), DEGREES, PRECISION));
         assertClose(Rational.one(), RationalMath.sin(Rational.of(100), GRADIANS, PRECISION));
         assertClose(Rational.one(), RationalMath.sin(
                 Rational.of(RationalMath.pi(PRECISION)).divide(Rational.two()), RADIANS, PRECISION));
@@ -217,5 +225,26 @@ class RationalMathTest {
         final MathContext context = RationalMath.context(4);
         assertEquals(4 + RationalMath.GUARD_DIGITS, context.getPrecision());
         assertEquals(1 + RationalMath.GUARD_DIGITS, RationalMath.context(0).getPrecision());
+    }
+
+    // ---- Working digits ---------------------------------------------------------------------------
+
+    @Test
+    void aComputedValueKeepsMoreDigitsThanTheDisplayShows() {
+        // The original's sin(30 deg) carries about twenty-one correct digits at precision sixteen;
+        // the port keeps its working digits rather than rounding each result down to the display.
+        final Rational sine = RationalMath.sin(Rational.of(30), DEGREES, PRECISION);
+        assertTrue(sine.toDecimalString(PRECISION + RationalMath.GUARD_DIGITS).length()
+                        > sine.toDecimalString(PRECISION).length(),
+                () -> "a computed value should carry guard digits, was " + sine);
+    }
+
+    @Test
+    void aRoundTripThroughTwoFunctionsStaysAccurate() {
+        // ln(exp(1)) used to display 0.9999999999999999 because exp had been rounded to sixteen
+        // digits before ln saw it; the original's display shows 1 and so does this one now.
+        final Rational roundTrip = RationalMath.ln(
+                RationalMath.exp(Rational.one(), PRECISION), PRECISION);
+        assertDisplay("1", roundTrip);
     }
 }

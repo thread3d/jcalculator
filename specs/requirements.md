@@ -201,6 +201,12 @@ scientific one — and spends them the way the original does:
 - a value that needs less precision keeps fixed notation however small it is, so `1/10000` reads
   `0.0001`.
 
+A computed value is kept at the working precision the display needs plus guard digits, as the
+original keeps them — its sine of thirty degrees carries about twenty-one correct digits at
+precision sixteen — so a chain of functions is as close to the original as a single call. The display
+then rounds that value once, at its own precision; it must not round to an intermediate precision
+first, because a tail like `…849` would carry twice and show `…85`.
+
 Digits are rounded half up and trailing zeros are trimmed, so `1.5` is shown as `1.5`, never
 `1.500000`. Decimal output is grouped in threes with commas; hexadecimal and binary in fours and octal
 in threes. The forced scientific format always uses an exponent. Error messages are shown instead of

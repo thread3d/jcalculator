@@ -126,4 +126,22 @@ class NumberFormatterTest {
     private static Rational sinOfOneDegree() {
         return dev.jcalculator.core.RationalMath.sin(Rational.one(), dev.jcalculator.core.AngleType.DEGREES, 16);
     }
+
+    @Test
+    void theFieldRoundsOnceAndNeverTwice() {
+        // A value ending ...849 must round down at the sixteenth digit, not be rounded to ...85
+        // first and then carry. This was a real double-rounding defect: the display rounded the
+        // working value and rounded that result again.
+        assertEquals("1.2969300866657717979985630881788",
+                NumberFormatter.format(Rational.of(new java.math.BigDecimal(
+                        "1.296930086665771797998563088178849")), 32, false));
+        // ...86 must round up once.
+        assertEquals("1.2969300866657717979985630881789",
+                NumberFormatter.format(Rational.of(new java.math.BigDecimal(
+                        "1.29693008666577179799856308817886")), 32, false));
+        // And the same shape at sixteen digits.
+        assertEquals("3.698582229575321",
+                NumberFormatter.format(Rational.of(new java.math.BigDecimal(
+                        "3.698582229575321498545945141345139721437")), 16, false));
+    }
 }

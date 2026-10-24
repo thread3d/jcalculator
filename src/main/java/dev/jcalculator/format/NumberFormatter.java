@@ -51,9 +51,11 @@ public final class NumberFormatter {
             return "0";
         }
         final int room = Math.max(1, precision);
-        // The working value carries two guard digits, as the original's strip-to-precision does.
+        // The working value keeps two spare digits, which the original's strip-to-precision does by
+        // dropping the rest. It must be truncated, not rounded: rounding here and rounding again
+        // below is a double rounding, and a tail like ...849 would carry twice and show ...85.
         final BigDecimal working = value
-                .toBigDecimal(new MathContext(room + 2, RoundingMode.HALF_UP))
+                .toBigDecimal(new MathContext(room + 2, RoundingMode.DOWN))
                 .stripTrailingZeros();
         final int exponent = working.precision() - working.scale();
         final int significant = Math.min(working.precision(), room);
@@ -80,7 +82,7 @@ public final class NumberFormatter {
         }
         final int room = Math.max(1, precision);
         final BigDecimal working = value
-                .toBigDecimal(new MathContext(room + 2, RoundingMode.HALF_UP))
+                .toBigDecimal(new MathContext(room + 2, RoundingMode.DOWN))
                 .stripTrailingZeros();
         return scientific(roundSignificant(working, room));
     }
