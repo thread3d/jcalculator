@@ -1,15 +1,63 @@
 # jCalculator requirements
 
-These requirements are the specification for the Java port of the Windows Calculator
-application that lives in this repository. They are written so that each one can be executed
-against the public API, and `specs/codewitness.yaml` attaches an executable scenario to every
-requirement. The identifiers are stable: evidence from one verification run can be compared with
-evidence from another only because the ids do not move.
+The specification of the Java port of the Windows Calculator that lives in this repository. Each of
+the thirty-eight requirements is one observable behaviour, and every one is attached to at least one
+executable scenario in `specs/codewitness.yaml`. `specs/README.md` is the handbook: how the two files
+fit together, how to add a requirement, and the latest verification result.
 
-The scope is the calculator's model and behaviour: rational arithmetic, the three calculator
-modes, memory, history, date calculation, unit conversion, and the formatting rules the display
-uses. The Swing window and the text interface are thin front ends over the same
-`CalculatorManager`; they are not separately specified here.
+## How to read a requirement
+
+A requirement is a heading with a stable id (`R-001` … `R-038`) followed by prose that says what must
+be true in the terms a caller can observe. The prose names a class or a method only when that name is
+part of the contract, so a refactor that keeps the behaviour does not invalidate the requirement.
+
+An id never moves and is never reused. Verification evidence is compared across runs by id, so adding
+a requirement renumbers nothing: new ids go at the end of this file.
+
+A requirement is *VERIFIED* when CodeWitness has built the project, run the whole JUnit suite and
+executed every scenario attached to it without a counterexample. It is not verified because someone
+read the code — the evidence is the executed scenario.
+
+## Scope
+
+Everything a calculation depends on: exact rational arithmetic, the three calculator modes, memory,
+history, date calculation, unit and currency conversion, the display rules, the engine's reporting
+protocol and error taxonomy, and the surfaces that drive them — the JSON harness, the MCP server, the
+text interface and the desktop window with its pages.
+
+The surfaces are specified because they are what a caller can observe, not duplicated per surface:
+the window, the text interface and the protocol are thin shells over one `CalculatorManager`, so a
+rule stated once holds for all of them, and a scenario may exercise it through whichever shell is
+clearest.
+
+## Non-goals
+
+Three things the original application has are deliberately not reproduced, and no requirement claims
+them:
+
+- **Live exchange rates.** The original fetches rates from Bing; that data is not licensed for a
+  third-party port. The port converts between fictional currencies with fixed mock rates (R-019).
+- **Translation.** The original ships sixty locales. The port is written in English only; the words
+  it shows are part of the requirements rather than a resource bundle.
+- **Telemetry.** The original traces usage. The port records only the problems its own issue journal
+  keeps (R-027), locally and never over the network.
+
+Two implementation differences are also deliberate rather than missing: the desktop window is Swing
+instead of XAML, so the original's visual states and animations do not exist; and transcendental
+functions are computed with `BigDecimal` at the displayed precision instead of the original's RatPack
+algorithms, so a last displayed digit can differ on arbitrary inputs while R-007's accuracy still
+holds.
+
+## Index
+
+| Area | Requirements | Count |
+| --- | --- | --- |
+| Arithmetic, the engine and its reports | `R-001`…`R-011`, `R-020`…`R-022`, `R-030`…`R-032` | 17 |
+| Memory and history | `R-012`…`R-014`, `R-033` | 4 |
+| Dates | `R-015`, `R-016` | 2 |
+| Converter | `R-017`…`R-019`, `R-036` | 4 |
+| Surfaces: harness, protocol, MCP, journal | `R-023`…`R-025`, `R-027`…`R-029` | 6 |
+| Window, pages and input | `R-026`, `R-034`, `R-035`, `R-037`, `R-038` | 5 |
 
 # R-001 Basic arithmetic is exact
 
@@ -275,3 +323,57 @@ the engine's immediate memory, runs the memory command there and copies the resu
 original's memory functions do. Every change to the list — a stored slot, an adjusted slot, a removed
 slot — raises the `memory_changed` signal, so a presentation layer can redraw the memory list without
 diffing it, and a recall raises `input_changed` because it changes the display without a keystroke.
+
+# R-034 The application moves between pages and remembers its settings
+
+The application is a set of pages over one calculator model: the three keypad pages, the date page,
+the converter page and the graphing page. The keypad pages select the session's mode; the other pages
+are separate workspaces. Which page is open, and the preferences the user chose, survive a restart.
+
+The preferences are the ones the original's settings page and title bar offer: a light, dark or
+follow-the-system colour scheme, and an always-on-top window. They are stored as a plain properties
+file beside the issue journal, at the path given by `jcalculator.settings.path` or under
+`.jcalculator/`. A settings file is user data, so a corrupted or hand-edited value, an unreadable
+file or a failed write never stops the application: an unreadable value falls back to its default,
+and a write that cannot be made is reported to the caller rather than thrown.
+
+# R-035 Pasted text is validated for the page before it is entered
+
+A paste is not a sequence of button presses to discover: it is text the user believes is a number or
+an expression. The page decides whether it may be pasted, as the original's copy/paste manager does.
+The standard page accepts digits, the decimal point, signs, exponent notation, multiplication and
+division; the scientific page adds parentheses, the power sign and percent; the programmer page adds
+parentheses, percent and the hexadecimal letters, bounded by its current base, so `FF` pasted into a
+decimal word and `9` pasted into a binary word are both refused. Whitespace is ignored. An accepted
+text becomes the button tokens that enter it — a letter on the programmer page is its hexadecimal
+digit, and `e` outside the programmer page is exponent entry — and a refused text is refused whole,
+with the caller told what failed, rather than entered in part.
+
+# R-036 The converter suggests the amount in the other units of its category
+
+Under the converter's answer, the same amount is shown in every other unit of the category, as the
+original's supplementary results do. The units already in use — the one the value is in and the one
+the answer is shown in — are left out. The list is ordered by how close each converted amount is to
+one, in orders of magnitude, so the units that read naturally next to the amount come first, and ties
+prefer the larger value. Each entry is rounded to two significant digits below one hundred, one
+significant digit below one thousand, and to a whole number above that. A unit whose rounded amount
+is zero is left out unless the category supports negative values, where zero is a meaningful reading.
+
+# R-037 The programmer page exposes the individual bits of its word
+
+The word is not only a number to be typed: each of its bits can be flipped directly, as clicking a bit
+in the original's bit panel does. Flipping a bit changes the current value, keeps the word width and
+base, and shows the new value on the display. A bit that does not exist in the current width is
+refused with an error naming the width, and flipping a bit outside programmer mode does nothing,
+because there is no word on the other pages.
+
+# R-038 The graphing page plots a function of x
+
+A function of `x` can be sampled and drawn. The expression is read with the calculator's own
+vocabulary — `x^2`, `sin(x)`, `1/x`, parentheses for grouping — and each sample is evaluated by the
+same engine the keypad drives, so the plot obeys the page's arithmetic, precedence and angle unit
+rather than a second, private parser. A function call is rewritten into keypad order, because a
+function is pressed after its operand. A sample the engine refuses, such as the point where `1/x`
+divides by zero or `ln(x)` leaves its domain, is omitted from the plot so the graph shows the gap
+instead of a false zero. An unusable range, fewer than two samples, an unbalanced parenthesis or text
+that is not part of a function is refused with an explanation.

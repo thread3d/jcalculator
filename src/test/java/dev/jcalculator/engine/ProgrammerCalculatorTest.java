@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProgrammerCalculatorTest {
@@ -63,7 +64,7 @@ class ProgrammerCalculatorTest {
         press(calculator, Command.WIDTH_BYTE);
         typeDecimal(calculator, "127");
         press(calculator, Command.ADD, Command.ONE, Command.EQUALS);
-        assertEquals("-128", calculator.primaryDisplay());
+        assertEquals("-128", calculator.rawDisplay());
 
         final CalculatorManager hex = calculator();
         press(hex, Command.RADIX_16, Command.F, Command.F, Command.RADIX_10);
@@ -156,6 +157,40 @@ class ProgrammerCalculatorTest {
         press(calculator, Command.EQUALS);
         assertEquals("3", calculator.primaryDisplay());
         assertFalse(calculator.isError());
+    }
+
+    @Test
+    void aBitCanBeFlippedIndividually() {
+        final CalculatorManager calculator = calculator();
+        typeDecimal(calculator, "0");
+        calculator.engine().toggleBit(0);
+        assertEquals("1", calculator.primaryDisplay());
+
+        calculator.engine().toggleBit(3);
+        assertEquals("9", calculator.primaryDisplay());
+
+        calculator.engine().toggleBit(3);
+        assertEquals("1", calculator.primaryDisplay());
+
+        calculator.engine().toggleBit(63);
+        assertEquals("-9223372036854775807", calculator.rawDisplay());
+    }
+
+    @Test
+    void aBitOutsideTheWordIsRefused() {
+        final CalculatorManager calculator = calculator();
+        press(calculator, Command.WIDTH_BYTE);
+        typeDecimal(calculator, "0");
+        assertThrows(IllegalArgumentException.class, () -> calculator.engine().toggleBit(8));
+        calculator.engine().toggleBit(7);
+        assertEquals("-128", calculator.rawDisplay());
+    }
+
+    @Test
+    void flippingBitsIsIgnoredOutsideProgrammerMode() {
+        final CalculatorManager standard = new CalculatorManager(CalculatorMode.STANDARD);
+        standard.engine().toggleBit(0);
+        assertEquals("0", standard.primaryDisplay());
     }
 
     @Test

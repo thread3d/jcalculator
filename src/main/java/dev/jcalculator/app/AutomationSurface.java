@@ -227,6 +227,15 @@ public final class AutomationSurface {
         session.press(token);
     }
 
+    /**
+     * Flips one bit of the programmer word, as clicking a bit in the bit panel does.
+     *
+     * @param index the bit to flip, counting from the least significant
+     */
+    public void toggleBit(int index) {
+        session.manager().engine().toggleBit(index);
+    }
+
     /** Presses an engine command directly, as the keyboard shortcuts do. */
     public void pressCommand(Command command) {
         session.press(Objects.requireNonNull(command, "command"));

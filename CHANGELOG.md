@@ -4,6 +4,49 @@ All notable changes to jCalculator are recorded here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+The gaps between this port and the original's application shell are closed. The window is now the
+whole application — pages, menus, settings, clipboard, bit panel and graphing — rather than a single
+keypad, and the specification grew five requirements (`R-034` … `R-038`) with their scenarios.
+
+### Added
+
+- An application shell: a menu that moves between the three keypad pages and the date, converter and
+  graphing workspaces; a view menu with the theme (light, dark, follow-the-system), always-on-top, the
+  history list and the memory list; file copy/paste/clear; a help menu with the about box and the
+  shortcut list; and `Ctrl+1`…`Ctrl+6`, `Ctrl+C`, `Ctrl+V`, `Ctrl+H` and `Ctrl+M` (`R-034`).
+- `Settings` and `SettingsStore`: the theme and always-on-top choices are kept in
+  `.jcalculator/settings.properties` and survive a restart, with a damaged or unreadable file falling
+  back to the defaults (`R-034`).
+- The date page and the converter page, both thin shells over the models the JSON protocol already
+  exposes; the converter lists the same amount in the other units of its category, ordered by
+  magnitude and rounded the way the original rounds its supplementary results (`R-036`).
+- The programmer bit panel: each bit of the word can be flipped by clicking it, bounded by the current
+  width and ignored on the other pages (`R-037`).
+- Clipboard support: a paste is validated against the active page's alphabet and base before anything
+  is entered, and an accepted text becomes the keypad presses that type it (`R-035`).
+- A graphing page over a new `graph` package: `GraphExpression` reads a function of x and rewrites a
+  prefix call into keypad order, and `FunctionPlotter` samples it through the calculator engine, so a
+  plot obeys the page's arithmetic, precedence and angle unit. Points the engine refuses are omitted
+  so the curve shows the gap (`R-038`).
+- Interactive history and memory dialogs: the history can be copied from or cleared, and the memory
+  list offers the per-slot `M+`, `M−` and `MC` the original's memory panel has.
+
+### Changed
+
+- `CalculatorWindow` is the application shell; the keypad moved into `app.CalculatorPage`, and
+  `DatePage`, `ConverterPage` and `GraphPage` are new pages beside it. The window's automation
+  accessors (`surface()`, `displayText()`, `findButton()`, …) are unchanged.
+- `specs/requirements.md` gained a preamble and an index, and `specs/README.md` is a handbook: how the
+  two files fit together, how a requirement is verified, a traceability table, coverage and the
+  reviewed heuristics.
+
+### Tests
+
+- `SettingsStoreTest`, `ClipboardTextTest`, `FunctionPlotterTest` and `CalculatorWindowShellTest`, plus
+  cases in `ProgrammerCalculatorTest` and `UnitConverterTest`: **382 tests** in 32 classes.
+
 ## [2.1.0] - 2026-10-24
 
 The test suite now covers the parts of the application it had never exercised. CodeWitness coverage

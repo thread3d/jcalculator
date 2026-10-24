@@ -29,6 +29,14 @@ keeps that structure in Java:
 | `CalcManager/NumberFormattingUtils.cpp` | `dev.jcalculator.format.NumberFormatter` |
 | `Calculator.ViewModels/Common/DateCalculator.cs` | `dev.jcalculator.date.DateCalculationEngine` |
 | `Calculator.ViewModels/StandardCalculatorViewModel.cs` | `CalculatorManager` + `CalculatorWindow` |
+| `Calculator/Views/MainPage.xaml`, `TitleBar.xaml` (navigation) | `AppPage`, `CalculatorWindow` (Swing) |
+| `Calculator/Views/Calculator.xaml`, `NumberPad.xaml`, operator panels | `app.CalculatorPage` |
+| `CalculatorProgrammerBitFlipPanel.xaml` | the bit panel in `app.CalculatorPage` |
+| `Calculator/Views/Settings.xaml`, `ApplicationViewModel` | `app.Settings`, `app.SettingsStore` |
+| `Calculator.ViewModels/Common/CopyPasteManager.cs` | `app.ClipboardText` |
+| `Calculator/Views/DateCalculator.xaml` | `app.DatePage` |
+| `Calculator/Views/UnitConverter.xaml`, `SupplementaryResults.xaml` | `app.ConverterPage` |
+| `Calculator/Views/GraphingCalculator/*` | `app.GraphPage`, `graph.GraphExpression`, `graph.FunctionPlotter` |
 | `Calculator/Views/*.xaml` | `dev.jcalculator.app.CalculatorWindow` (Swing) |
 
 The engine reports through the original's display interface rather than touching a view: the primary
@@ -196,7 +204,24 @@ capability. The fifteen tools are `calculator_press`, `calculator_evaluate`, `ca
 State persists between calls, and `--seed N` / `--mode MODE` set the initial session. The
 `initialize` instructions mention how many issues the journal currently holds open.
 
-### 4. Window automation
+### 4. Desktop window
+
+The window is the application shell rather than a single keypad. Its **Pages** menu moves between the
+standard, scientific and programmer keypads and the **date**, **converter** and **graphing**
+workspaces; **View** carries the theme (light, dark or follow the system), an always-on-top switch, and
+the history and memory lists; **File** copies the display, pastes a number and clears; **Help** holds
+the about box and the shortcut list. The preferences are kept in `.jcalculator/settings.properties`
+(override with `jcalculator.settings.path`), so the theme, the window's always-on-top state and the
+last choice survive a restart.
+
+The programmer page shows the word's bits as a clickable panel, the way the original does. Pasting is
+validated for the page before anything is entered: the programmer page refuses `FF` in a decimal word,
+and the scientific page refuses text the keypad could not produce. The graphing page plots a function
+of x — `x^2`, `sin(x)`, `1/x` — sampled through the calculator engine itself, so the curve obeys the
+same arithmetic and angle unit the keypad uses, and a point the engine refuses (a division by zero, a
+logarithm outside its domain) is left out rather than drawn as zero.
+
+### 5. Window automation
 
 `AutomationSurface` is the window's controller: each page publishes its key layout by label, and a
 click resolves the label against the active page.

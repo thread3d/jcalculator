@@ -260,6 +260,29 @@ public final class CalcEngine {
         return BitMath.toBits(currentValue, width.bits());
     }
 
+    /**
+     * Flips one bit of the programmer word, as clicking a bit in the original's bit panel does.
+     *
+     * <p>Outside programmer mode there is no word to flip, so the call is ignored rather than being an
+     * error: the panel that sends it is only shown on that page.
+     *
+     * @param index the bit to flip, counting from the least significant
+     * @throws IllegalArgumentException when the index is outside the current word width
+     */
+    public void toggleBit(int index) {
+        if (!mode.isIntegerMode()) {
+            return;
+        }
+        if (index < 0 || index >= width.bits()) {
+            throw new IllegalArgumentException(
+                    "no bit " + index + " in a " + width.bits() + "-bit word");
+        }
+        record = false;
+        input.clear();
+        currentValue = Rational.of(BitMath.toBits(currentValue, width.bits()).flipBit(index));
+        displayNum();
+    }
+
     // ---- Public commands ------------------------------------------------------------------------
 
     /** Switches mode and resets the engine, as opening another calculator page does. */

@@ -3,6 +3,7 @@ package dev.jcalculator.convert;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -92,6 +93,50 @@ class UnitConverterTest {
     void tinyValuesUseScientificNotation() {
         final BigDecimal value = new BigDecimal("1.234e-16");
         assertEquals("1.234000e-16", converter.formatResult(value, 1, false));
+    }
+
+    @Test
+    void supplementaryValuesExpressTheAmountInTheOtherUnits() {
+        final Unit meter = converter.findUnit(UnitCategory.LENGTH, "Meter");
+        final Unit foot = converter.findUnit(UnitCategory.LENGTH, "Foot");
+
+        final List<UnitConverter.SupplementaryValue> values =
+                converter.supplementaryValues(meter, foot, BigDecimal.ONE);
+
+        assertFalse(values.isEmpty());
+        assertTrue(values.stream().noneMatch(value -> value.unit().abbreviation().equals("m")));
+        assertTrue(values.stream().noneMatch(value -> value.unit().abbreviation().equals("ft")));
+        assertTrue(values.stream().anyMatch(value -> value.text().equals("39")));
+    }
+
+    @Test
+    void supplementaryValuesPutTheClosestMagnitudeFirst() {
+        final Unit meter = converter.findUnit(UnitCategory.LENGTH, "Meter");
+        final Unit foot = converter.findUnit(UnitCategory.LENGTH, "Foot");
+        final List<UnitConverter.SupplementaryValue> values =
+                converter.supplementaryValues(meter, foot, BigDecimal.ONE);
+
+        assertEquals("Yard", values.get(0).unit().name());
+        assertEquals("1.1", values.get(0).text());
+    }
+
+    @Test
+    void supplementaryValuesRoundToAFewSignificantDigits() {
+        final Unit celsius = converter.findUnit(UnitCategory.TEMPERATURE, "Celsius");
+        final Unit fahrenheit = converter.findUnit(UnitCategory.TEMPERATURE, "Fahrenheit");
+        final List<UnitConverter.SupplementaryValue> values =
+                converter.supplementaryValues(celsius, fahrenheit, BigDecimal.ZERO);
+
+        assertEquals(1, values.size());
+        assertEquals("Kelvin", values.get(0).unit().name());
+        assertEquals("300", values.get(0).text());
+    }
+
+    @Test
+    void thereAreNoSupplementaryValuesWithoutAUnit() {
+        assertTrue(converter.supplementaryValues(null, null, BigDecimal.ONE).isEmpty());
+        final Unit meter = converter.findUnit(UnitCategory.LENGTH, "Meter");
+        assertTrue(converter.supplementaryValues(meter, null, null).isEmpty());
     }
 
     @Test

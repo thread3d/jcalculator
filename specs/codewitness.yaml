@@ -1003,3 +1003,96 @@ scenarios:
         description: load a slot that was never stored
     observation: "String.valueOf(outcome.response().get(\"errorCode\")) + \"|\" + outcome.response().get(\"ok\")"
     invariant: "\"bad_request|false\".equals(observation)"
+
+  # R-034 -- the application moves between pages and remembers its settings.
+  - id: SC-SETTINGS-SURVIVE-A-RESTART
+    requirement: R-034
+    description: Settings written by one run are read by the next, and a damaged value falls back
+    mode: single
+    setup: "java.nio.file.Path dir = java.nio.file.Files.createTempDirectory(\"jc-settings\"); dev.jcalculator.app.SettingsStore store = new dev.jcalculator.app.SettingsStore(dir.resolve(\"settings.properties\"));"
+    steps:
+      - call: "store.save(new dev.jcalculator.app.Settings(dev.jcalculator.app.Settings.Theme.DARK, true));"
+        description: store dark theme and always-on-top
+    observation: "new dev.jcalculator.app.SettingsStore(dir.resolve(\"settings.properties\")).load().theme() + \"|\" + new dev.jcalculator.app.SettingsStore(dir.resolve(\"settings.properties\")).load().alwaysOnTop()"
+    invariant: "\"DARK|true\".equals(observation)"
+
+  - id: SC-PAGES-DISTINGUISH-KEYPADS
+    requirement: R-034
+    description: The keypad pages select a mode; the date, converter and graphing pages do not
+    mode: single
+    setup: "String keypad = dev.jcalculator.app.AppPage.STANDARD.isCalculatorPage() + \"|\" + dev.jcalculator.app.AppPage.STANDARD.mode(); String other = dev.jcalculator.app.AppPage.CONVERTER.isCalculatorPage() + \"|\" + dev.jcalculator.app.AppPage.CONVERTER.mode();"
+    steps:
+      - call: "keypad = keypad + \"|\" + other;"
+        description: read both kinds of page
+    observation: "keypad"
+    invariant: "\"true|STANDARD|false|null\".equals(observation)"
+
+  # R-035 -- pasted text is validated for the page before it is entered.
+  - id: SC-PASTE-RESPECTS-THE-BASE
+    requirement: R-035
+    description: Hexadecimal letters pasted into a decimal word are refused
+    mode: single
+    setup: "boolean hex = dev.jcalculator.app.ClipboardText.accepts(\"FF\", dev.jcalculator.engine.CalculatorMode.PROGRAMMER, 16); boolean dec = dev.jcalculator.app.ClipboardText.accepts(\"FF\", dev.jcalculator.engine.CalculatorMode.PROGRAMMER, 10);"
+    steps:
+      - call: "hex = hex;"
+        description: evaluate both pages
+    observation: "hex + \"|\" + dec"
+    invariant: "\"true|false\".equals(observation)"
+
+  - id: SC-PASTE-BECOMES-BUTTONS
+    requirement: R-035
+    description: An accepted text becomes the button tokens that enter it
+    mode: single
+    setup: "String tokens = String.join(\",\", dev.jcalculator.app.ClipboardText.tokens(\"1e5\", dev.jcalculator.engine.CalculatorMode.SCIENTIFIC, 10));"
+    steps:
+      - call: "tokens = tokens.trim();"
+        description: read the tokens
+    observation: "tokens"
+    invariant: "\"1,exp,5\".equals(observation)"
+
+  # R-036 -- the converter suggests the amount in the other units of its category.
+  - id: SC-CONVERTER-SUPPLEMENTS
+    requirement: R-036
+    description: The other units of the category are listed, nearest magnitude first
+    mode: single
+    setup: "dev.jcalculator.convert.UnitConverter converter = new dev.jcalculator.convert.UnitConverter(); dev.jcalculator.convert.Unit meter = converter.findUnit(dev.jcalculator.convert.UnitCategory.LENGTH, \"Meter\"); dev.jcalculator.convert.Unit foot = converter.findUnit(dev.jcalculator.convert.UnitCategory.LENGTH, \"Foot\"); java.util.List<dev.jcalculator.convert.UnitConverter.SupplementaryValue> values = converter.supplementaryValues(meter, foot, java.math.BigDecimal.ONE);"
+    steps:
+      - call: "values = java.util.List.copyOf(values);"
+        description: convert one metre to the other length units
+    observation: "values.get(0).unit().name() + \"|\" + values.get(0).text() + \"|\" + values.stream().anyMatch(v -> v.unit().abbreviation().equals(\"ft\"))"
+    invariant: "\"Yard|1.1|false\".equals(observation)"
+
+  # R-037 -- the programmer page exposes the individual bits of its word.
+  - id: SC-PROGRAMMER-BIT-FLIP
+    requirement: R-037
+    description: Flipping a bit changes the word and shows the result
+    mode: single
+    setup: "dev.jcalculator.manager.CalculatorManager calculator = new dev.jcalculator.manager.CalculatorManager(dev.jcalculator.engine.CalculatorMode.PROGRAMMER, 0L);"
+    steps:
+      - call: "calculator.engine().toggleBit(0); calculator.engine().toggleBit(3);"
+        description: set bits zero and three
+    observation: "calculator.rawDisplay()"
+    invariant: "\"9\".equals(observation)"
+
+  # R-038 -- the graphing page plots a function of x.
+  - id: SC-GRAPH-PLOTS-A-FUNCTION
+    requirement: R-038
+    description: A polynomial is sampled across its range
+    mode: single
+    setup: "dev.jcalculator.graph.FunctionPlotter.Plot plot = dev.jcalculator.graph.FunctionPlotter.plot(\"x^2\", -2, 2, 5);"
+    steps:
+      - call: "plot = dev.jcalculator.graph.FunctionPlotter.plot(\"x^2\", -2, 2, 5);"
+        description: sample x squared from minus two to two
+    observation: "plot.samples().size() + \"|\" + plot.samples().get(0).y() + \"|\" + plot.maxY()"
+    invariant: "\"5|4.0|4.0\".equals(observation)"
+
+  - id: SC-GRAPH-OMITS-REFUSED-POINTS
+    requirement: R-038
+    description: The point where a function is undefined is left out of the plot
+    mode: single
+    setup: "dev.jcalculator.graph.FunctionPlotter.Plot plot = dev.jcalculator.graph.FunctionPlotter.plot(\"1/x\", -1, 1, 3);"
+    steps:
+      - call: "plot = dev.jcalculator.graph.FunctionPlotter.plot(\"1/x\", -1, 1, 3);"
+        description: sample one over x across zero
+    observation: "plot.samples().size()"
+    invariant: "2 == observation"

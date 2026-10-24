@@ -182,6 +182,75 @@ public final class UnitConverter {
     }
 
     /** Currency ratio equality, e.g. {@code 1 MAR = 0.5 MON}. */
+    /**
+     * The converted value expressed in every other unit of the category.
+     *
+     * <p>This is what the original shows in the supplementary-results area under the converter's
+     * answer: the same amount in the units the user is not currently comparing, sorted so the units
+     * closest in magnitude to the amount come first, and rounded to two significant digits below one
+     * hundred, one below one thousand, and to a whole number above that.
+     *
+     * @param from  the unit the value is in
+     * @param to    the unit the main answer is shown in, which is left out
+     * @param value the amount to express in the other units
+     */
+    public List<SupplementaryValue> supplementaryValues(Unit from, Unit to, BigDecimal value) {
+        final List<SupplementaryValue> result = new ArrayList<>();
+        if (from == null || value == null) {
+            return result;
+        }
+        final List<ScoredConversion> scored = new ArrayList<>();
+        for (Unit unit : units(from.category())) {
+            if (unit.id() == from.id() || (to != null && unit.id() == to.id())) {
+                continue;
+            }
+            final BigDecimal converted = convert(from, unit, value);
+            scored.add(new ScoredConversion(converted, unit));
+        }
+        scored.sort((first, second) -> {
+            final double firstMagnitude = magnitudeOf(first.converted());
+            final double secondMagnitude = magnitudeOf(second.converted());
+            final int byDistance = Double.compare(Math.abs(firstMagnitude), Math.abs(secondMagnitude));
+            return byDistance != 0 ? byDistance : Double.compare(secondMagnitude, firstMagnitude);
+        });
+        for (ScoredConversion entry : scored) {
+            final String text = roundForSuggestion(entry.converted());
+            if (text.isEmpty()) {
+                continue;
+            }
+            if (new BigDecimal(text).signum() != 0 || from.category().supportsNegative()) {
+                result.add(new SupplementaryValue(text, entry.unit()));
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private static double magnitudeOf(BigDecimal value) {
+        if (value.signum() == 0) {
+            return Double.NEGATIVE_INFINITY;
+        }
+        return Math.log10(value.abs().doubleValue());
+    }
+
+    /** Two significant digits below a hundred, one below a thousand, whole numbers above that. */
+    private static String roundForSuggestion(BigDecimal value) {
+        final BigDecimal magnitude = value.abs();
+        if (magnitude.compareTo(BigDecimal.valueOf(100)) < 0) {
+            return value.round(new MathContext(2, RoundingMode.HALF_UP)).stripTrailingZeros().toPlainString();
+        }
+        if (magnitude.compareTo(BigDecimal.valueOf(1000)) < 0) {
+            return value.round(new MathContext(1, RoundingMode.HALF_UP)).stripTrailingZeros().toPlainString();
+        }
+        return value.setScale(0, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    /** One conversion in the supplementary list. */
+    public record SupplementaryValue(String text, Unit unit) {
+    }
+
+    private record ScoredConversion(BigDecimal converted, Unit unit) {
+    }
+
     public String currencyRatioEquality(Unit from, Unit to) {
         final BigDecimal ratio = ratioOf(to).divide(ratioOf(from), conversionContext());
         final String rounded = trim(ratio.setScale(4, RoundingMode.HALF_UP));
