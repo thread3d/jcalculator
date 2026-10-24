@@ -39,7 +39,7 @@ removed from the project after the run and kept in the run directory.
 
 ## Latest result
 
-Run `CW-2026-10-24-MQAN6` (copy mode, not in place):
+Run `CW-2026-10-24-G2KEK` (copy mode, not in place):
 
 | Measure | Result |
 | --- | --- |
@@ -52,7 +52,7 @@ Run `CW-2026-10-24-MQAN6` (copy mode, not in place):
 | Coverage | 85.6% line, 72.3% branch |
 
 The JSON and HTML reports are in
-`.codewitness/runs/CW-2026-10-24-MQAN6/report.json` and `report.html`. The run directory is
+`.codewitness/runs/CW-2026-10-24-G2KEK/report.json` and `report.html`. The run directory is
 git-ignored because it is generated evidence, not source.
 
 Coverage is measured over the sources the existing suite already builds; the untested remainder is

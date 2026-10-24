@@ -4,7 +4,7 @@ All notable changes to jCalculator are recorded here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.1.0] - 2026-10-24
 
 The test suite now covers the parts of the application it had never exercised. CodeWitness coverage
 rises from 74.4% line / 57.4% branch to **85.6% line / 72.3% branch**, and the suite from 212 to 341
